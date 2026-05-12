@@ -7,8 +7,7 @@ function lerp(a: number, b: number, t: number): number {
 export function render(ctx: CanvasRenderingContext2D, graph: Graph): void {
   const w = ctx.canvas.width;
   const h = ctx.canvas.height;
-  ctx.fillStyle = '#fafafa';
-  ctx.fillRect(0, 0, w, h);
+  ctx.clearRect(0, 0, w, h);
 
   ctx.strokeStyle = '#000';
   for (const edge of graph.edges) {
