@@ -18,8 +18,8 @@ export interface Graph {
   adj: number[][];
 }
 
-function initialD(): number {
-  return 0.5 + 0.1 * (Math.random() - 0.5);
+function initialD(random: () => number): number {
+  return 0.5 + 0.1 * (random() - 0.5);
 }
 
 export type GraphMode = 'complete' | 'delaunay';
@@ -28,23 +28,23 @@ export function emptyGraph(): Graph {
   return { nodes: [], edges: [], adj: [] };
 }
 
-function addEdge(graph: Graph, i: number, j: number): void {
+function addEdge(graph: Graph, i: number, j: number, random: () => number): void {
   const a = Math.min(i, j);
   const b = Math.max(i, j);
   const dx = graph.nodes[a].x - graph.nodes[b].x;
   const dy = graph.nodes[a].y - graph.nodes[b].y;
-  const length = Math.hypot(dx, dy);
+  const length = Math.max(Math.hypot(dx, dy), 1e-6);
   const idx = graph.edges.length;
-  graph.edges.push({ i: a, j: b, length, D: initialD() });
+  graph.edges.push({ i: a, j: b, length, D: initialD(random) });
   graph.adj[a].push(idx);
   graph.adj[b].push(idx);
 }
 
-export function buildCompleteGraph(nodes: Node[]): Graph {
+export function buildCompleteGraph(nodes: Node[], random: () => number = Math.random): Graph {
   const graph: Graph = { nodes: nodes.map((n) => ({ ...n })), edges: [], adj: [] };
   for (let k = 0; k < nodes.length; k++) graph.adj.push([]);
   for (let i = 0; i < nodes.length; i++) {
-    for (let j = i + 1; j < nodes.length; j++) addEdge(graph, i, j);
+    for (let j = i + 1; j < nodes.length; j++) addEdge(graph, i, j, random);
   }
   return graph;
 }
@@ -79,6 +79,9 @@ function delaunayTriangles(nodes: Node[]): Array<[number, number, number]> {
     const bx = pts[b].x, by = pts[b].y;
     const cx0 = pts[c].x, cy0 = pts[c].y;
     const d = 2 * (ax * (by - cy0) + bx * (cy0 - ay) + cx0 * (ay - by));
+    if (Math.abs(d) < 1e-9) {
+      return { a, b, c, cx: 0, cy: 0, r2: Number.POSITIVE_INFINITY };
+    }
     const ux = ((ax * ax + ay * ay) * (by - cy0) + (bx * bx + by * by) * (cy0 - ay) + (cx0 * cx0 + cy0 * cy0) * (ay - by)) / d;
     const uy = ((ax * ax + ay * ay) * (cx0 - bx) + (bx * bx + by * by) * (ax - cx0) + (cx0 * cx0 + cy0 * cy0) * (bx - ax)) / d;
     const r2 = (ax - ux) * (ax - ux) + (ay - uy) * (ay - uy);
@@ -126,12 +129,12 @@ function delaunayTriangles(nodes: Node[]): Array<[number, number, number]> {
   return result;
 }
 
-export function buildDelaunayGraph(nodes: Node[]): Graph {
+export function buildDelaunayGraph(nodes: Node[], random: () => number = Math.random): Graph {
   const graph: Graph = { nodes: nodes.map((n) => ({ ...n })), edges: [], adj: [] };
   for (let k = 0; k < nodes.length; k++) graph.adj.push([]);
   if (nodes.length < 2) return graph;
   if (nodes.length === 2) {
-    addEdge(graph, 0, 1);
+    addEdge(graph, 0, 1, random);
     return graph;
   }
   const tris = delaunayTriangles(nodes);
@@ -142,26 +145,41 @@ export function buildDelaunayGraph(nodes: Node[]): Graph {
     const k = `${a}_${b}`;
     if (seen.has(k)) return;
     seen.add(k);
-    addEdge(graph, a, b);
+    addEdge(graph, a, b, random);
   };
   for (const [a, b, c] of tris) {
     tryAdd(a, b);
     tryAdd(b, c);
     tryAdd(c, a);
   }
+  if (graph.edges.length === 0 && nodes.length > 1) {
+    const order = nodes.map((_, index) => index).sort((a, b) =>
+      nodes[a].x - nodes[b].x || nodes[a].y - nodes[b].y,
+    );
+    for (let index = 1; index < order.length; index++) {
+      tryAdd(order[index - 1], order[index]);
+    }
+  }
   return graph;
 }
 
-export function rebuildGraph(graph: Graph, mode: GraphMode): Graph {
-  const next = mode === 'delaunay' ? buildDelaunayGraph(graph.nodes) : buildCompleteGraph(graph.nodes);
+export function rebuildGraph(graph: Graph, mode: GraphMode, random: () => number = Math.random): Graph {
+  const next = mode === 'delaunay' ? buildDelaunayGraph(graph.nodes, random) : buildCompleteGraph(graph.nodes, random);
   return next;
 }
 
-export function addNode(graph: Graph, x: number, y: number, flow: number, mode: GraphMode = 'complete'): { graph: Graph; node: Node } {
+export function addNode(
+  graph: Graph,
+  x: number,
+  y: number,
+  flow: number,
+  mode: GraphMode = 'complete',
+  random: () => number = Math.random,
+): { graph: Graph; node: Node } {
   const id = graph.nodes.length;
   const nodes = graph.nodes.map((n) => ({ ...n }));
   nodes.push({ id, x, y, flow });
-  const next = mode === 'delaunay' ? buildDelaunayGraph(nodes) : buildCompleteGraph(nodes);
+  const next = mode === 'delaunay' ? buildDelaunayGraph(nodes, random) : buildCompleteGraph(nodes, random);
   return { graph: next, node: next.nodes[id] };
 }
 

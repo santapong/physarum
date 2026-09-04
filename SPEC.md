@@ -1,21 +1,25 @@
-# Physarum Pathfinder — Project Specification
+# Physarum Pathfinder — Original Project Specification
 
 A browser-based simulation of *Physarum polycephalum* (slime mold) self-organizing
 into near-optimal transport networks between user-placed source/sink nodes.
 Implementation of the Tero et al. (2010) adaptation model.
 
+> This document preserves the original Day 1 specification. The completed v1
+> scope, including features that were originally deferred, is tracked in
+> [`PLAN_V1.md`](./PLAN_V1.md).
+
 ---
 
 ## Definition of Done (Day 1)
 
-- [ ] User clicks empty canvas → places a node (gray, internal)
-- [ ] Shift-click on canvas → places a source node (green)
-- [ ] Alt-click on canvas → places a sink node (red)
-- [ ] "Run" button starts the simulation
-- [ ] Surviving high-conductivity edges visibly emerge as the system converges
-- [ ] `μ` slider (range [0.5, 2.0]) live-adjusts network character
-- [ ] `Reset` button clears nodes and edges
-- [ ] Simulation maintains ≥ 30 fps for ≤ 50 nodes on a complete graph
+- [x] User clicks empty canvas → places a node (gray, internal)
+- [x] Shift-click on canvas → places a source node (green)
+- [x] Alt-click on canvas → places a sink node (red)
+- [x] "Run" button starts the simulation
+- [x] Surviving high-conductivity edges visibly emerge as the system converges
+- [x] `μ` slider (range [0.5, 2.0]) live-adjusts network character
+- [x] `Clear` button clears nodes and edges
+- [x] Simulation maintains ≥ 30 fps for ≤ 50 nodes on a complete graph
 
 ---
 

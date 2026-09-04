@@ -4,10 +4,21 @@ function lerp(a: number, b: number, t: number): number {
   return a + (b - a) * t;
 }
 
-export function render(ctx: CanvasRenderingContext2D, graph: Graph): void {
+export interface RenderOptions {
+  backgroundImage?: HTMLImageElement | null;
+}
+
+export function render(ctx: CanvasRenderingContext2D, graph: Graph, options: RenderOptions = {}): void {
   const w = ctx.canvas.width;
   const h = ctx.canvas.height;
   ctx.clearRect(0, 0, w, h);
+
+  if (options.backgroundImage?.complete && options.backgroundImage.naturalWidth > 0) {
+    ctx.save();
+    ctx.globalAlpha = 0.28;
+    ctx.drawImage(options.backgroundImage, 0, 0, w, h);
+    ctx.restore();
+  }
 
   ctx.strokeStyle = '#000';
   for (const edge of graph.edges) {

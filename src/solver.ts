@@ -23,14 +23,14 @@ export function cg(
   for (let k = 0; k < maxIter; k++) {
     const Ap = matvec(p);
     const pAp = dot(p, Ap);
-    if (pAp === 0) return x;
+    if (!Number.isFinite(pAp) || Math.abs(pAp) < 1e-14) return x;
     const alpha = rTr / pAp;
     for (let i = 0; i < n; i++) {
       x[i] += alpha * p[i];
       r[i] -= alpha * Ap[i];
     }
     const rTrNew = dot(r, r);
-    if (Math.sqrt(rTrNew) < tol) return x;
+    if (!Number.isFinite(rTrNew) || Math.sqrt(rTrNew) < tol) return x;
     const beta = rTrNew / rTr;
     const pNext = new Array<number>(n);
     for (let i = 0; i < n; i++) pNext[i] = r[i] + beta * p[i];

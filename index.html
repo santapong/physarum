@@ -3,92 +3,108 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Explore how slime mold adapts into efficient transport networks." />
     <title>Physarum Pathfinder</title>
-    <style>
-      body {
-        margin: 0;
-        padding: 24px;
-        font-family: system-ui, -apple-system, sans-serif;
-        background: #fafafa;
-        color: #111;
-      }
-      canvas {
-        display: block;
-        border: 1px solid #ddd;
-        position: relative;
-      }
-      .canvas-wrap {
-        background: #fafafa;
-      }
-      #controls {
-        margin-top: 12px;
-        display: flex;
-        align-items: center;
-        gap: 16px;
-        flex-wrap: wrap;
-      }
-      #controls label {
-        display: inline-flex;
-        align-items: center;
-        gap: 8px;
-        font-size: 14px;
-      }
-      #controls input[type="range"] {
-        width: 160px;
-      }
-      button {
-        padding: 6px 14px;
-        font-size: 14px;
-        cursor: pointer;
-      }
-      #hint {
-        margin-top: 8px;
-        font-size: 13px;
-        color: #555;
-      }
-      #stats {
-        margin-top: 4px;
-        font-size: 12px;
-        color: #888;
-        font-variant-numeric: tabular-nums;
-      }
-      .canvas-wrap {
-        position: relative;
-        display: inline-block;
-      }
-      #map {
-        position: absolute;
-        inset: 0;
-        width: 900px;
-        height: 600px;
-        pointer-events: none;
-        object-fit: cover;
-        opacity: 0.5;
-        display: none;
-      }
-    </style>
   </head>
   <body>
-    <div class="canvas-wrap">
-      <img id="map" alt="" />
-      <canvas id="c" width="900" height="600"></canvas>
-    </div>
-    <div id="controls">
-      <button id="run">Run</button>
-      <button id="reset">Reset</button>
-      <label>μ:  <input type="range" id="mu" min="0.5" max="2"   step="0.05" value="1.2"></label>
-      <label>Δt: <input type="range" id="dt" min="0.01" max="0.2" step="0.01" value="0.05"></label>
-      <label>Mode:
-        <select id="mode">
-          <option value="complete">Complete</option>
-          <option value="delaunay">Delaunay</option>
-        </select>
-      </label>
-      <label>Map: <input type="file" id="mapfile" accept="image/*"></label>
-      <button id="clearmap" type="button">Clear map</button>
-    </div>
-    <p id="hint">Click to place node · Shift+click = source · Alt+click = sink</p>
-    <p id="stats">0 nodes · 0 edges · 0 fps</p>
+    <main class="app-shell">
+      <header class="masthead">
+        <div>
+          <p class="eyebrow">Adaptive network laboratory</p>
+          <h1>Physarum Pathfinder</h1>
+          <p class="lede">Place supply and demand points, then watch a living network strengthen useful paths and let inefficient ones fade.</p>
+        </div>
+        <div class="status" aria-live="polite"><span class="status-dot"></span><span id="status-text">Ready</span></div>
+      </header>
+
+      <div class="workspace">
+        <section class="stage" aria-labelledby="simulation-heading">
+          <h2 id="simulation-heading" class="visually-hidden">Network simulation</h2>
+          <div class="stage-toolbar">
+            <div class="toolbar-group">
+              <button id="run" class="primary" type="button" aria-pressed="false">Run</button>
+              <button id="step" type="button">Step</button>
+              <button id="restart" type="button">Restart</button>
+              <button id="clear" type="button">Clear</button>
+            </div>
+            <div class="toolbar-group">
+              <button id="share" type="button">Copy link</button>
+              <button id="export" type="button">Export PNG</button>
+            </div>
+          </div>
+          <div class="canvas-frame">
+            <canvas id="c" width="900" height="600" role="img" aria-label="Adaptive transport network simulation" aria-describedby="canvas-summary"></canvas>
+          </div>
+          <p id="canvas-summary" class="visually-hidden">Network canvas.</p>
+          <p id="stats" class="stats">0 nodes · 0 visible paths · 0 steps · 0 fps</p>
+        </section>
+
+        <aside class="sidebar" aria-label="Simulation controls">
+          <section class="panel">
+            <h2>Scenario</h2>
+            <label class="field">Preset
+              <select id="preset"><option value="">Custom network</option></select>
+            </label>
+            <label class="field">Graph substrate
+              <select id="mode">
+                <option value="complete">Complete graph</option>
+                <option value="delaunay">Delaunay mesh</option>
+              </select>
+            </label>
+            <label class="field">Seed
+              <span class="seed-row">
+                <input id="seed" type="number" min="1" step="1" value="1207" />
+                <button id="random-seed" type="button" aria-label="Generate a new seed">New</button>
+              </span>
+            </label>
+          </section>
+
+          <section class="panel">
+            <h2>Place nodes</h2>
+            <div class="tool-grid" role="group" aria-label="Node placement type">
+              <button type="button" data-tool="internal" aria-pressed="true">Junction</button>
+              <button type="button" data-tool="source" aria-pressed="false">Source</button>
+              <button type="button" data-tool="sink" aria-pressed="false">Sink</button>
+            </div>
+            <p class="explanation placement-help">Choose a type, then click the canvas. Shift-click places a source; Alt-click places a sink.</p>
+          </section>
+
+          <section class="panel">
+            <h2>Dynamics</h2>
+            <label class="field">
+              <span class="field-line"><span>Network character μ</span><output id="mu-value" for="mu">1.20</output></span>
+              <input type="range" id="mu" min="0.5" max="2" step="0.05" value="1.2" />
+            </label>
+            <label class="field">
+              <span class="field-line"><span>Time step Δt</span><output id="dt-value" for="dt">0.05</output></span>
+              <input type="range" id="dt" min="0.01" max="0.2" step="0.01" value="0.05" />
+            </label>
+            <label class="field">
+              <span class="field-line"><span>Steps per frame</span><output id="speed-value" for="speed">8×</output></span>
+              <input type="range" id="speed" min="1" max="24" step="1" value="8" />
+            </label>
+          </section>
+
+          <section class="panel">
+            <h2>Map layer</h2>
+            <div class="file-row">
+              <label class="file-label">Choose image<input id="mapfile" type="file" accept="image/*" /></label>
+              <button id="clearmap" type="button">Remove</button>
+            </div>
+          </section>
+
+          <section class="panel">
+            <h2>Read the network</h2>
+            <ul class="legend">
+              <li><span class="swatch source"></span>Source supplies flow</li>
+              <li><span class="swatch sink"></span>Sink consumes flow</li>
+              <li><span class="swatch internal"></span>Junction redirects flow</li>
+            </ul>
+            <p class="explanation reading-help"><strong>Thicker paths carry more flow.</strong> Values below μ = 1 preserve mesh-like redundancy; values above 1 favor sparse, tree-like routes.</p>
+          </section>
+        </aside>
+      </div>
+    </main>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
