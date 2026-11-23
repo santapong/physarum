@@ -4,15 +4,15 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="Explore how slime mold adapts into efficient transport networks." />
-    <title>Physarum Pathfinder</title>
+    <title>Physarum Pathfinder — Tero Research &amp; Learning Lab</title>
   </head>
   <body>
     <main class="app-shell">
       <header class="masthead">
         <div>
-          <p class="eyebrow">Adaptive network laboratory</p>
+          <p class="eyebrow">Adaptive network laboratory · Tero et al. (2010)</p>
           <h1>Physarum Pathfinder</h1>
-          <p class="lede">Place supply and demand points, then watch a living network strengthen useful paths and let inefficient ones fade.</p>
+          <p class="lede">Place food terminals or load city hubs, paint light barriers, cut live tubes, and inspect the exact Laplacian pressure and conductivity equations adapting in real time.</p>
         </div>
         <div class="status" aria-live="polite"><span class="status-dot"></span><span id="status-text">Ready</span></div>
       </header>
@@ -30,12 +30,39 @@
             <div class="toolbar-group">
               <button id="share" type="button">Copy link</button>
               <button id="export" type="button">Export PNG</button>
+              <button id="export-csv" type="button">Export CSV</button>
             </div>
           </div>
+
           <div class="canvas-frame">
             <canvas id="c" width="900" height="600" role="img" aria-label="Adaptive transport network simulation" aria-describedby="canvas-summary"></canvas>
           </div>
           <p id="canvas-summary" class="visually-hidden">Network canvas.</p>
+
+          <div class="metrics-strip" aria-label="Live Tero network metrics">
+            <div class="metric-card">
+              <span class="metric-label">Cost (TL / MST)</span>
+              <strong id="metric-tl" class="metric-value">—</strong>
+            </div>
+            <div class="metric-card">
+              <span class="metric-label">Efficiency (MD)</span>
+              <strong id="metric-md" class="metric-value">—</strong>
+            </div>
+            <div class="metric-card">
+              <span class="metric-label">Fault Tolerance (FT)</span>
+              <strong id="metric-ft" class="metric-value">—</strong>
+            </div>
+            <div class="metric-card">
+              <span class="metric-label">Solver (PCG)</span>
+              <strong id="metric-pcg" class="metric-value">—</strong>
+            </div>
+            <div class="metric-card spark-card">
+              <span class="metric-label">History (<span class="legend-tl">TL</span> · <span class="legend-ft">FT</span>)</span>
+              <canvas id="sparkline" width="220" height="44" aria-label="TL and FT convergence history"></canvas>
+            </div>
+          </div>
+
+          <p id="edge-inspector" class="edge-inspector">Hover any path on the canvas to inspect its live Tero equation.</p>
           <p id="stats" class="stats">0 nodes · 0 visible paths · 0 steps · 0 fps</p>
         </section>
 
@@ -44,6 +71,12 @@
             <h2>Scenario</h2>
             <label class="field">Preset
               <select id="preset"><option value="">Custom network</option></select>
+            </label>
+            <label class="field">Flow model
+              <select id="flow-mode">
+                <option value="source-sink">Source → Sink</option>
+                <option value="multi-terminal">Multi-Terminal (Tero 2010)</option>
+              </select>
             </label>
             <label class="field">Graph substrate
               <select id="mode">
@@ -60,13 +93,19 @@
           </section>
 
           <section class="panel">
-            <h2>Place nodes</h2>
-            <div class="tool-grid" role="group" aria-label="Node placement type">
+            <h2>Interactive tools</h2>
+            <div class="tool-grid" role="group" aria-label="Canvas interaction tool">
               <button type="button" data-tool="internal" aria-pressed="true">Junction</button>
-              <button type="button" data-tool="source" aria-pressed="false">Source</button>
+              <button type="button" data-tool="source" aria-pressed="false">Source / Food</button>
               <button type="button" data-tool="sink" aria-pressed="false">Sink</button>
+              <button type="button" data-tool="cut" aria-pressed="false">Cut Edge</button>
+              <button type="button" data-tool="obstacle" aria-pressed="false">Paint Light</button>
+              <button type="button" data-tool="erase" aria-pressed="false">Erase Light</button>
             </div>
-            <p class="explanation placement-help">Choose a type, then click the canvas. Shift-click places a source; Alt-click places a sink.</p>
+            <div class="tool-actions">
+              <button id="clear-obstacles" type="button">Clear obstacles</button>
+            </div>
+            <p class="explanation placement-help">Click canvas to apply tool. Shift-click places Source/Food; Alt-click places Sink; drag to paint light barriers.</p>
           </section>
 
           <section class="panel">
@@ -86,24 +125,78 @@
           </section>
 
           <section class="panel">
-            <h2>Map layer</h2>
-            <div class="file-row">
-              <label class="file-label">Choose image<input id="mapfile" type="file" accept="image/*" /></label>
-              <button id="clearmap" type="button">Remove</button>
+            <h2>Inspect overlays</h2>
+            <div class="check-list">
+              <label class="check-item"><input type="checkbox" id="show-mst" /> MST baseline (cost = 1.0)</label>
+              <label class="check-item"><input type="checkbox" id="show-pressure" /> Pressure &amp; flow pulses</label>
+              <label class="check-item"><input type="checkbox" id="show-labels" /> Station labels</label>
+              <label class="check-item"><input type="checkbox" id="map-obstacle" /> Map brightness → obstacle</label>
+            </div>
+            <div class="field">
+              <span>Map layer</span>
+              <div class="file-row">
+                <label class="file-label">Load image<input type="file" id="mapfile" accept="image/*" /></label>
+                <button id="clearmap" type="button">Clear map</button>
+              </div>
             </div>
           </section>
 
           <section class="panel">
-            <h2>Read the network</h2>
+            <h2>Legend</h2>
             <ul class="legend">
-              <li><span class="swatch source"></span>Source supplies flow</li>
-              <li><span class="swatch sink"></span>Sink consumes flow</li>
-              <li><span class="swatch internal"></span>Junction redirects flow</li>
+              <li><span class="swatch source"></span>Source / Food terminal (Multi-Terminal: amber)</li>
+              <li><span class="swatch sink"></span>Sink (consumes flow)</li>
+              <li><span class="swatch internal"></span>Junction (Steiner relay)</li>
+              <li><span class="swatch mst"></span>MST reference · Amber tint = high-cost light</li>
             </ul>
-            <p class="explanation reading-help"><strong>Thicker paths carry more flow.</strong> Values below μ = 1 preserve mesh-like redundancy; values above 1 favor sparse, tree-like routes.</p>
           </section>
         </aside>
       </div>
+
+      <section class="learn-section" aria-labelledby="learn-heading">
+        <div class="learn-header">
+          <p class="eyebrow">Interactive curriculum</p>
+          <h2 id="learn-heading">Learn the Math &amp; Experiments</h2>
+        </div>
+        <div class="learn-grid">
+          <article class="learn-card">
+            <h3>1. Hydraulic Resistor Network</h3>
+            <p class="formula">L(D) · p = b &nbsp;&nbsp;|&nbsp;&nbsp; Q<sub>ij</sub> = (D<sub>ij</sub> / L<sub>eff</sub>) · (p<sub>i</sub> − p<sub>j</sub>)</p>
+            <p>Each tube acts as a fluid pipe whose conductance is <code>D / L<sub>eff</sub></code>. A Jacobi-preconditioned Conjugate Gradient solver finds node pressures satisfying Kirchhoff flow conservation at every junction.</p>
+            <div class="learn-actions">
+              <button type="button" data-demo="pressure">Show Pressure &amp; Flow</button>
+            </div>
+          </article>
+
+          <article class="learn-card">
+            <h3>2. Nonlinear Feedback (μ &lt; 1 vs μ &gt; 1)</h3>
+            <p class="formula">D<sub>t+1</sub> = (D<sub>t</sub> + Δt · |Q|<sup>μ</sup> / (1 + |Q|<sup>μ</sup>)) / (1 + Δt)</p>
+            <p>Semi-implicit integration keeps adaptation stable at large Δt. When <strong>μ &lt; 1</strong>, small parallel routes survive as a resilient mesh; when <strong>μ &gt; 1</strong>, positive feedback amplifies trunks and prunes weak detours into trees.</p>
+            <div class="learn-actions">
+              <button type="button" data-demo="mesh">Try Mesh (μ = 0.75)</button>
+              <button type="button" data-demo="tree">Try Tree (μ = 1.60)</button>
+            </div>
+          </article>
+
+          <article class="learn-card">
+            <h3>3. Multi-Terminal Tokyo Rail (2010)</h3>
+            <p class="formula">I<sub>0</sub> = 0.65 √(K / 2) &nbsp;&nbsp;|&nbsp;&nbsp; Q<sub>rms</sub> = √(⟨Q<sup>2</sup>⟩)</p>
+            <p>In Tero et al. (<em>Science</em>, 2010), all city hubs are equal food sources explored via random pairs, while bright light masks high-cost barriers like Tokyo Bay so corridors curve naturally around water.</p>
+            <div class="learn-actions">
+              <button type="button" data-demo="tokyo">Run Tokyo Rail + MST</button>
+            </div>
+          </article>
+
+          <article class="learn-card">
+            <h3>4. Fault Tolerance &amp; Self-Healing</h3>
+            <p class="formula">Performance = FT / (TL<sub>/MST</sub> · MD)</p>
+            <p>A Minimum Spanning Tree has minimum cost (<code>TL = 1.0</code>) but zero fault tolerance (<code>FT = 0</code>). Physarum balances low cost, short travel distance (<code>MD</code>), and redundant cycles that automatically regrow if a main link is severed.</p>
+            <div class="learn-actions">
+              <button type="button" data-demo="heal">Cut an Edge to Test Healing</button>
+            </div>
+          </article>
+        </div>
+      </section>
     </main>
     <script type="module" src="/src/main.ts"></script>
   </body>

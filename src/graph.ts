@@ -3,6 +3,7 @@ export interface Node {
   x: number;
   y: number;
   flow: number;
+  label?: string;
 }
 
 export interface Edge {
@@ -10,6 +11,9 @@ export interface Edge {
   j: number;
   length: number;
   D: number;
+  costFactor: number;
+  flow: number;
+  severed?: boolean;
 }
 
 export interface Graph {
@@ -18,11 +22,12 @@ export interface Graph {
   adj: number[][];
 }
 
+export type GraphMode = 'complete' | 'delaunay';
+export type FlowMode = 'source-sink' | 'multi-terminal';
+
 function initialD(random: () => number): number {
   return 0.5 + 0.1 * (random() - 0.5);
 }
-
-export type GraphMode = 'complete' | 'delaunay';
 
 export function emptyGraph(): Graph {
   return { nodes: [], edges: [], adj: [] };
@@ -35,7 +40,15 @@ function addEdge(graph: Graph, i: number, j: number, random: () => number): void
   const dy = graph.nodes[a].y - graph.nodes[b].y;
   const length = Math.max(Math.hypot(dx, dy), 1e-6);
   const idx = graph.edges.length;
-  graph.edges.push({ i: a, j: b, length, D: initialD(random) });
+  graph.edges.push({
+    i: a,
+    j: b,
+    length,
+    D: initialD(random),
+    costFactor: 1,
+    flow: 0,
+    severed: false,
+  });
   graph.adj[a].push(idx);
   graph.adj[b].push(idx);
 }
@@ -192,4 +205,71 @@ export function hasSourceAndSink(graph: Graph): boolean {
     if (src && snk) return true;
   }
   return false;
+}
+
+export function hasActiveTerminals(graph: Graph, flowMode: FlowMode): boolean {
+  if (flowMode === 'source-sink') return hasSourceAndSink(graph);
+  let terminals = 0;
+  for (const n of graph.nodes) {
+    if (n.flow !== 0) {
+      terminals++;
+      if (terminals >= 2) return true;
+    }
+  }
+  return false;
+}
+
+function pointToSegmentDistance(
+  px: number,
+  py: number,
+  ax: number,
+  ay: number,
+  bx: number,
+  by: number,
+): number {
+  const dx = bx - ax;
+  const dy = by - ay;
+  const lenSq = dx * dx + dy * dy;
+  if (lenSq <= 1e-12) return Math.hypot(px - ax, py - ay);
+  const t = Math.min(1, Math.max(0, ((px - ax) * dx + (py - ay) * dy) / lenSq));
+  return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
+}
+
+function findNearestEdgeIndex(
+  graph: Graph,
+  x: number,
+  y: number,
+  maxDistPx: number,
+  minD: number,
+): number | null {
+  let bestIdx: number | null = null;
+  let bestDist = maxDistPx;
+  for (let idx = 0; idx < graph.edges.length; idx++) {
+    const edge = graph.edges[idx];
+    if (edge.severed || edge.D <= minD) continue;
+    const a = graph.nodes[edge.i];
+    const b = graph.nodes[edge.j];
+    const d = pointToSegmentDistance(x, y, a.x, a.y, b.x, b.y);
+    if (d <= bestDist) {
+      bestDist = d;
+      bestIdx = idx;
+    }
+  }
+  return bestIdx;
+}
+
+/** Permanently sever the nearest visible active edge for self-healing experiments. */
+export function severEdgeNear(graph: Graph, x: number, y: number, maxDistPx = 12): number | null {
+  const idx = findNearestEdgeIndex(graph, x, y, maxDistPx, 0.03);
+  if (idx === null) return null;
+  const edge = graph.edges[idx];
+  edge.D = 0;
+  edge.flow = 0;
+  edge.severed = true;
+  return idx;
+}
+
+/** Find the nearest visible active edge for hover inspection. */
+export function findEdgeNear(graph: Graph, x: number, y: number, maxDistPx = 10): number | null {
+  return findNearestEdgeIndex(graph, x, y, maxDistPx, 0.02);
 }

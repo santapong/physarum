@@ -14,9 +14,27 @@ const state: SharedState = {
   seed: 404,
 };
 
+const stateV2: SharedState = {
+  version: 2,
+  nodes: [
+    { id: 0, x: 450, y: 290, flow: -1, label: 'Tokyo' },
+    { id: 1, x: 390, y: 418, flow: 1, label: 'Yokohama' },
+  ],
+  mode: 'delaunay',
+  flowMode: 'multi-terminal',
+  mu: 1.35,
+  dt: 0.05,
+  speed: 8,
+  seed: 2010,
+};
+
 describe('share state', () => {
-  it('round-trips a valid scenario', () => {
+  it('round-trips a valid v1 scenario', () => {
     expect(decodeState(encodeState(state))).toEqual(state);
+  });
+
+  it('round-trips a valid v2 multi-terminal scenario with labels', () => {
+    expect(decodeState(encodeState(stateV2))).toEqual(stateV2);
   });
 
   it('rejects malformed state and clamps unsafe values', () => {
