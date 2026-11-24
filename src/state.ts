@@ -34,6 +34,7 @@ export function sanitizeState(candidate: unknown): SharedState | null {
   const nodes: Node[] = [];
   for (let index = 0; index < raw.nodes.length; index++) {
     const value = raw.nodes[index] as Partial<Node>;
+    if (!value || typeof value !== 'object') return null;
     if (!Number.isFinite(value.x) || !Number.isFinite(value.y) || !Number.isFinite(value.flow)) {
       return null;
     }

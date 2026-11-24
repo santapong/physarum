@@ -1,40 +1,36 @@
 # Physarum Pathfinder
 
-An interactive browser simulation of how *Physarum polycephalum* (slime mold)
-adapts into efficient transport networks. It implements the Tero et al. (2010)
-conductivity model on complete or Delaunay graph substrates.
+An interactive browser simulation and learning lab for how *Physarum polycephalum*
+(slime mold) self-organizes into fault-tolerant, low-cost transport networks. It
+implements the Tero et al. (2010) conductivity model on complete or Delaunay graph
+substrates with both `Source → Sink` and `Multi-Terminal (Tero 2010)` dynamics.
 
 **Live app:** <https://santapong.github.io/physarum/>
 
 ## Try it
 
-1. Choose one of the four scenarios or place your own source, sink, and junctions.
-2. Select **Run** and watch weak routes disappear while useful paths strengthen.
-3. Move `mu` below 1 for more redundancy, or above 1 for a sparser network.
-4. Use **Copy link** to share the reproducible initial scenario or **Export PNG**
-   to save the current canvas.
+1. Choose one of the six scenarios (**Direct route**, **River crossing**, **City ring**,
+   **Supply web**, **Tokyo Rail · Tero 2010**, or **Bangkok Metro · Multi-Terminal**) or
+   place your own terminals and junctions.
+2. Select **Run** and watch weak detours prune while high-flux corridors strengthen.
+3. Move `μ` below 1 for resilient mesh redundancy, or above 1 for sparse tree-like routes.
+4. Paint light/obstacle zones, switch to **Cut Edge** to test self-healing rerouting,
+   hover any tube to inspect its live Tero equation, and use **Copy link**, **Export PNG**,
+   or **Export CSV** to save results.
 
-The seed controls the initial conductivity noise, so restarting or opening a
-shared scenario produces the same starting network.
+## Controls & Overlays
 
-## Controls
-
-| Control | Result |
+| Control / Tool | Result |
 |---|---|
-| Run / Pause | Start or pause adaptation |
-| Step | Advance by the selected number of substeps |
-| Restart | Rebuild current nodes from their seeded initial conductivities |
-| Clear | Remove all nodes and edges |
-| Junction / Source / Sink | Select the node placed by the next canvas click |
-| Shift-click / Alt-click | Quick source / sink placement |
-| Graph substrate | Switch between complete and Delaunay graphs |
-| Seed / New | Reproduce or randomize initial conductivities |
-| Network character `mu` | Below 1 favors meshes; above 1 favors trees |
-| Time step `dt` | Control adaptation size per substep |
-| Steps per frame | Control simulation speed |
-| Map layer | Add or remove a local background image |
-| Copy link | Store nodes, dynamics, graph mode, and seed in the URL hash |
-| Export PNG | Save the canvas, including its map layer |
+| Run / Pause / Step / Restart / Clear | Control adaptation and reset to seeded start |
+| Flow model | Switch `Source → Sink` vs `Multi-Terminal (Tero 2010)` |
+| Graph substrate | Switch between `Complete graph` and `Delaunay mesh` |
+| Junction / Source / Sink | Place nodes (`Shift+click` = Source/Food, `Alt+click` = Sink) |
+| Cut Edge | Sever a live tube (`D = 0`) to observe bypass regrowth |
+| Paint Light / Erase Light | Paint or clear high-cost terrain/light barriers |
+| `μ`, `Δt`, Steps/frame | Tune feedback nonlinearity, step size, and animation speed |
+| Inspect overlays | Toggle **MST baseline**, **Pressure & flow pulses**, **Station labels**, and **Map brightness → obstacle** |
+| Copy link / Export PNG / Export CSV | Share v1/v2 `#state=` URLs, save canvas PNG, or download metrics CSV |
 
 ## Develop and validate
 
@@ -48,36 +44,48 @@ npm run build
 npm run preview
 ```
 
-The test suite covers deterministic randomness, complete and Delaunay graph
-construction, pressure solving, conductivity adaptation, presets, and shared
-state validation. Pull requests run tests and a production build; deployment to
-GitHub Pages repeats both checks before publishing.
+The test suite includes **32 unit tests across 8 test files** covering deterministic PRNG,
+complete and Delaunay graph builders, Jacobi-PCG pressure solving, semi-implicit
+adaptation and self-healing, Kruskal/Dijkstra network metrics, terrain masking,
+all 6 presets, and shared-state v1/v2 validation.
+
+## Run with Docker
+
+```bash
+docker compose up -d --build
+# App:    http://127.0.0.1:8080/
+# Health: http://127.0.0.1:8080/healthz
+```
 
 ## Algorithm
 
 Each simulation step:
 
-1. Solves the grounded weighted Laplacian `L' p' = b'` for node pressures with a
-   sparse conjugate-gradient implementation.
-2. Computes edge flow `Q = (D / length) (p_i - p_j)`.
-3. Updates conductivity with
-   `D = D + dt (|Q|^mu / (1 + |Q|^mu) - D)` and clamps it to `[0, 1]`.
+1. Solves the grounded weighted Laplacian `L' p' = b'` per connected component using
+   Jacobi-preconditioned Conjugate Gradient (`solvePressuresDetailed`).
+2. Computes edge flow `Q = (D / (length * costFactor)) (p_i - p_j)` (or RMS flow across
+   sampled terminal pairs in `multi-terminal` mode).
+3. Updates conductivity via unconditionally stable semi-implicit integration:
+   `D ← (D + Δt · (|Q|^μ / (1 + |Q|^μ))) / (1 + Δt)`, clamped to `[1e-5, 1]` on
+   unsevered filaments.
 
-See [SPEC.md](./SPEC.md) for the model and [PLAN_V1.md](./PLAN_V1.md) for the v1
-scope. The manual release checklist is in [ACCEPTANCE.md](./ACCEPTANCE.md).
+See [SPEC.md](./SPEC.md) for the base specification and [CHANGELOG.md](./CHANGELOG.md)
+for release history.
 
 ## Source layout
 
 ```text
 src/
-|-- main.ts       UI controls and animation loop
-|-- graph.ts      Complete and Delaunay graph builders
-|-- solver.ts     Conjugate-gradient pressure solver
-|-- sim.ts        Conductivity adaptation step
-|-- render.ts     Canvas rendering
-|-- presets.ts    Built-in scenarios
-|-- random.ts     Seeded random generator
-`-- state.ts      Share-state validation and serialization
+|-- main.ts       UI controls, tools, metrics strip, learning demos, animation loop
+|-- graph.ts      Complete and Delaunay graph builders, edge sever/hover helpers
+|-- solver.ts     Per-component Jacobi-PCG pressure solver with warm start
+|-- sim.ts        Semi-implicit Tero dynamics (source-sink and multi-terminal)
+|-- metrics.ts    Kruskal MST, TL/MST, MD, fault tolerance (FT) metrics
+|-- terrain.ts    90x60 light/obstacle cost grid and image-luminance mapper
+|-- render.ts     Canvas renderer with terrain, MST, pressure, flow, label layers
+|-- presets.ts    6 scenarios including Tokyo Rail (with Tokyo Bay) and Bangkok Metro
+|-- random.ts     Seeded PRNG
+`-- state.ts      Versioned v1/v2 share-state validation and serialization
 ```
 
 ## References
@@ -86,3 +94,5 @@ src/
   design.* Science 327(5964), 439-442.
 - Bonifaci, V., Mehlhorn, K., & Varma, G. (2012). *Physarum can compute shortest
   paths.* Journal of Theoretical Biology 309, 121-133.
+- Straszak, D., & Vishnoi, N. K. (2016). *Natural algorithms for flow problems.*
+  SODA 2016.

@@ -46,4 +46,11 @@ describe('share state', () => {
   it('returns null for invalid encoded data', () => {
     expect(decodeState('%not-json')).toBeNull();
   });
+
+  it.each([null, undefined, false, 42, 'node', {}, { x: 1, y: 2 }])(
+    'rejects malformed node entry %j without throwing',
+    (entry) => {
+      expect(sanitizeState({ ...state, nodes: [state.nodes[0], entry] })).toBeNull();
+    },
+  );
 });
