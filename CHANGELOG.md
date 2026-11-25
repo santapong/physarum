@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.0.0 - 2026-11-25
+
+- Added **Vascular, Microfluidics & Soft Robotics** lab (`murray` power-law dynamics with Hagen–Poiseuille `D ∝ r⁴` scaling, Murray's Law & wall shear stress metrics/heatmap, **Tissue Scaffold**, **Cold Plate**, and **Soft Actuator** presets, plus 1:1 mm SVG and parametric OpenSCAD CAD exports).
+- Added **Mathematical Optimization & Analog LP** lab (`linear-lp` Bonifaci/Straszak–Vishnoi mirror-descent dynamics with predictive-damped primal-dual congestion multipliers, exact SSAP baseline & Lyapunov energy tracking, **Cap Edge** bottleneck tool, `N×N` crossbar conductance heatmap, **Shortest Path**, **Capacitated Min-Cost Flow**, and **Resistor Crossbar** presets, plus SPICE `.cir` netlist export).
+- Added unified 3-lab domain tabs, `v3` share-state serialization (preserving `v1`/`v2` compatibility), 6 interactive **Learn the Math & Experiments** cards, and expanded the suite to 41 unit tests across 10 test files.
+
 ## 2.0.0 - 2026-11-24
 
 - Added Jacobi-preconditioned Conjugate Gradient (`solvePressuresDetailed`) with per-connected-component grounding and optional warm-starting.
