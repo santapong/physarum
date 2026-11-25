@@ -111,10 +111,33 @@ function pcg(
   return { x, iterations: maxIter, residual, converged: residual < tol };
 }
 
+export function effectiveEdgeCost(edge: Graph['edges'][number]): number {
+  return edge.length * Math.max(edge.costFactor ?? 1, 1);
+}
+
+/** Normalize positive node supplies to sum to +1 and negative demands to sum to -1. */
+export function normalizedNodeFlows(graph: Graph): number[] {
+  const n = graph.nodes.length;
+  const flows = new Array<number>(n).fill(0);
+  let posSum = 0;
+  let negSum = 0;
+  for (const node of graph.nodes) {
+    if (node.flow > 0) posSum += node.flow;
+    else if (node.flow < 0) negSum += -node.flow;
+  }
+  if (posSum <= 0 || negSum <= 0) return flows;
+  for (let k = 0; k < n; k++) {
+    const f = graph.nodes[k].flow;
+    if (f > 0) flows[k] = f / posSum;
+    else if (f < 0) flows[k] = f / negSum;
+  }
+  return flows;
+}
+
 function edgeConductance(edge: Graph['edges'][number]): number {
   if (edge.severed || edge.D <= 1e-12) return 0;
-  const cost = Math.max(edge.costFactor ?? 1, 1);
-  return edge.D / (edge.length * cost);
+  const congestionScale = 1 + Math.max(edge.congestion ?? 0, 0);
+  return edge.D / (effectiveEdgeCost(edge) * congestionScale);
 }
 
 /**
@@ -130,22 +153,12 @@ export function solvePressuresDetailed(
   if (N === 0) return { pressures: [], iterations: 0, residual: 0, converged: true };
   if (N === 1) return { pressures: [0], iterations: 0, residual: 0, converged: true };
 
-  const rawFlows = new Array<number>(N);
+  let rawFlows: number[];
   if (rhsFlows) {
+    rawFlows = new Array<number>(N);
     for (let k = 0; k < N; k++) rawFlows[k] = rhsFlows[k] ?? 0;
   } else {
-    let posSum = 0;
-    let negSum = 0;
-    for (const node of graph.nodes) {
-      if (node.flow > 0) posSum += node.flow;
-      else if (node.flow < 0) negSum += -node.flow;
-    }
-    for (let k = 0; k < N; k++) {
-      const f = graph.nodes[k].flow;
-      if (f > 0 && posSum > 0) rawFlows[k] = f / posSum;
-      else if (f < 0 && negSum > 0) rawFlows[k] = f / negSum;
-      else rawFlows[k] = 0;
-    }
+    rawFlows = normalizedNodeFlows(graph);
   }
 
   const visited = new Uint8Array(N);

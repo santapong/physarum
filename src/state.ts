@@ -1,4 +1,4 @@
-import type { FlowMode, GraphMode, Node } from './graph';
+import type { DynamicsMode, FlowMode, GraphMode, LabDomain, Node } from './graph';
 
 export interface SharedStateV1 {
   version: 1;
@@ -21,16 +21,32 @@ export interface SharedStateV2 {
   seed: number;
 }
 
-export type SharedState = SharedStateV1 | SharedStateV2;
+export interface SharedStateV3 {
+  version: 3;
+  domain: LabDomain;
+  dynamicsMode: DynamicsMode;
+  nodes: Node[];
+  mode: GraphMode;
+  flowMode: FlowMode;
+  mu: number;
+  dt: number;
+  speed: number;
+  seed: number;
+  maxRadiusMm?: number;
+  capacities?: Array<{ i: number; j: number; capacity: number }>;
+}
+
+export type SharedState = SharedStateV1 | SharedStateV2 | SharedStateV3;
 
 const clamp = (value: number, min: number, max: number): number =>
   Math.min(max, Math.max(min, value));
 
 export function sanitizeState(candidate: unknown): SharedState | null {
   if (!candidate || typeof candidate !== 'object') return null;
-  const raw = candidate as Partial<SharedStateV2> & { version?: number };
+  const raw = candidate as Omit<Partial<SharedStateV3>, 'version'> & { version?: number };
   if (!Array.isArray(raw.nodes) || raw.nodes.length > 100) return null;
 
+  const isV3 = raw.version === 3;
   const nodes: Node[] = [];
   for (let index = 0; index < raw.nodes.length; index++) {
     const value = raw.nodes[index] as Partial<Node>;
@@ -42,7 +58,7 @@ export function sanitizeState(candidate: unknown): SharedState | null {
       id: index,
       x: clamp(Number(value.x), 0, 900),
       y: clamp(Number(value.y), 0, 600),
-      flow: Math.sign(Number(value.flow)),
+      flow: isV3 ? clamp(Number(value.flow), -100, 100) : Math.sign(Number(value.flow)),
     };
     if (typeof value.label === 'string' && value.label.trim().length > 0) {
       cleanNode.label = value.label.trim().slice(0, 24);
@@ -55,6 +71,55 @@ export function sanitizeState(candidate: unknown): SharedState | null {
   const dt = clamp(Number(raw.dt) || 0.05, 0.01, 0.2);
   const speed = Math.round(clamp(Number(raw.speed) || 8, 1, 24));
   const seed = Math.max(1, Math.trunc(Number(raw.seed) || 1) >>> 0);
+
+  if (isV3) {
+    const domain: LabDomain =
+      raw.domain === 'vascular' || raw.domain === 'optimization' ? raw.domain : 'transport';
+    const dynamicsMode: DynamicsMode =
+      raw.dynamicsMode === 'murray' || raw.dynamicsMode === 'linear-lp'
+        ? raw.dynamicsMode
+        : 'tero';
+    const flowMode: FlowMode = raw.flowMode === 'multi-terminal' ? 'multi-terminal' : 'source-sink';
+    const stateV3: SharedStateV3 = {
+      version: 3,
+      domain,
+      dynamicsMode,
+      nodes,
+      mode,
+      flowMode,
+      mu,
+      dt,
+      speed,
+      seed,
+    };
+    if (Number.isFinite(raw.maxRadiusMm)) {
+      stateV3.maxRadiusMm = clamp(Number(raw.maxRadiusMm), 0.2, 5.0);
+    }
+    if (Array.isArray(raw.capacities) && raw.capacities.length > 0) {
+      const caps: Array<{ i: number; j: number; capacity: number }> = [];
+      for (const entry of raw.capacities.slice(0, 200)) {
+        if (!entry || typeof entry !== 'object') continue;
+        const ci = Math.trunc(Number(entry.i));
+        const cj = Math.trunc(Number(entry.j));
+        const cap = Number(entry.capacity);
+        if (
+          Number.isInteger(ci) &&
+          Number.isInteger(cj) &&
+          ci >= 0 &&
+          cj >= 0 &&
+          ci < nodes.length &&
+          cj < nodes.length &&
+          ci !== cj &&
+          Number.isFinite(cap) &&
+          cap > 0
+        ) {
+          caps.push({ i: Math.min(ci, cj), j: Math.max(ci, cj), capacity: clamp(cap, 0.01, 100) });
+        }
+      }
+      if (caps.length > 0) stateV3.capacities = caps;
+    }
+    return stateV3;
+  }
 
   if (raw.version === 2 || raw.flowMode === 'multi-terminal') {
     const flowMode: FlowMode = raw.flowMode === 'multi-terminal' ? 'multi-terminal' : 'source-sink';

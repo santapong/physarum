@@ -14,6 +14,8 @@ export interface Edge {
   costFactor: number;
   flow: number;
   severed?: boolean;
+  capacity?: number;
+  congestion?: number;
 }
 
 export interface Graph {
@@ -24,6 +26,8 @@ export interface Graph {
 
 export type GraphMode = 'complete' | 'delaunay';
 export type FlowMode = 'source-sink' | 'multi-terminal';
+export type LabDomain = 'transport' | 'vascular' | 'optimization';
+export type DynamicsMode = 'tero' | 'murray' | 'linear-lp';
 
 function initialD(random: () => number): number {
   return 0.5 + 0.1 * (random() - 0.5);
@@ -272,4 +276,50 @@ export function severEdgeNear(graph: Graph, x: number, y: number, maxDistPx = 12
 /** Find the nearest visible active edge for hover inspection. */
 export function findEdgeNear(graph: Graph, x: number, y: number, maxDistPx = 10): number | null {
   return findNearestEdgeIndex(graph, x, y, maxDistPx, 0.02);
+}
+
+/** Apply explicit finite positive edge capacities and clear prior congestion multipliers. */
+export function applyCapacitiesToGraph(
+  graph: Graph,
+  capacities?: Array<{ i: number; j: number; capacity: number }>,
+): void {
+  const capMap = new Map<string, number>();
+  if (capacities) {
+    for (const item of capacities) {
+      if (!Number.isFinite(item.capacity) || item.capacity <= 0) continue;
+      const a = Math.min(item.i, item.j);
+      const b = Math.max(item.i, item.j);
+      if (a === b) continue;
+      capMap.set(`${a}_${b}`, item.capacity);
+    }
+  }
+  for (const edge of graph.edges) {
+    const cap = capMap.get(`${edge.i}_${edge.j}`);
+    if (cap !== undefined) {
+      edge.capacity = cap;
+    } else {
+      delete edge.capacity;
+    }
+    edge.congestion = 0;
+  }
+}
+
+/** Toggle a bottleneck flow capacity on the nearest active non-severed edge. */
+export function toggleEdgeCapacityNear(
+  graph: Graph,
+  x: number,
+  y: number,
+  defaultCapacity = 0.55,
+  maxDistPx = 14,
+): number | null {
+  const idx = findNearestEdgeIndex(graph, x, y, maxDistPx, 0.005);
+  if (idx === null) return null;
+  const edge = graph.edges[idx];
+  if (edge.capacity !== undefined && Number.isFinite(edge.capacity)) {
+    delete edge.capacity;
+  } else {
+    edge.capacity = defaultCapacity;
+  }
+  edge.congestion = 0;
+  return idx;
 }

@@ -28,6 +28,24 @@ const stateV2: SharedState = {
   seed: 2010,
 };
 
+const stateV3: SharedState = {
+  version: 3,
+  domain: 'optimization',
+  dynamicsMode: 'linear-lp',
+  nodes: [
+    { id: 0, x: 110, y: 215, flow: 0.6, label: 'Supply A' },
+    { id: 1, x: 795, y: 215, flow: -0.6, label: 'Demand X' },
+  ],
+  mode: 'delaunay',
+  flowMode: 'source-sink',
+  mu: 1.0,
+  dt: 0.05,
+  speed: 8,
+  seed: 4102,
+  maxRadiusMm: 1.5,
+  capacities: [{ i: 0, j: 1, capacity: 0.55 }],
+};
+
 describe('share state', () => {
   it('round-trips a valid v1 scenario', () => {
     expect(decodeState(encodeState(state))).toEqual(state);
@@ -35,6 +53,34 @@ describe('share state', () => {
 
   it('round-trips a valid v2 multi-terminal scenario with labels', () => {
     expect(decodeState(encodeState(stateV2))).toEqual(stateV2);
+  });
+
+  it('round-trips a valid v3 domain scenario with capacities and preserves fractional flows', () => {
+    expect(decodeState(encodeState(stateV3))).toEqual(stateV3);
+  });
+
+  it('sanitizes malformed v3 fields cleanly without throwing', () => {
+    const cleaned = sanitizeState({
+      ...stateV3,
+      domain: 'unknown',
+      dynamicsMode: 'invalid',
+      maxRadiusMm: 99,
+      capacities: [
+        { i: 0, j: 0, capacity: 0.5 },
+        { i: 0, j: 9, capacity: 0.5 },
+        { i: 1, j: 0, capacity: -1 },
+        null,
+      ],
+    });
+    expect(cleaned).toMatchObject({
+      version: 3,
+      domain: 'transport',
+      dynamicsMode: 'tero',
+      maxRadiusMm: 5.0,
+    });
+    if (cleaned?.version === 3) {
+      expect(cleaned.capacities).toBeUndefined();
+    }
   });
 
   it('rejects malformed state and clamps unsafe values', () => {

@@ -3,19 +3,25 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="Explore how slime mold adapts into efficient transport networks." />
-    <title>Physarum Pathfinder — Tero Research &amp; Learning Lab</title>
+    <meta name="description" content="Explore how Physarum polycephalum solves transport networks, microfluidic/soft-robotics vasculature, and mathematical optimization on analog resistor crossbars." />
+    <title>Physarum Pathfinder — 3-Lab Adaptive Network Workbench</title>
   </head>
   <body>
     <main class="app-shell">
       <header class="masthead">
         <div>
-          <p class="eyebrow">Adaptive network laboratory · Tero et al. (2010)</p>
+          <p class="eyebrow">Adaptive network laboratory · Tero (2010) · Murray Vascular · Bonifaci/SV Analog LP</p>
           <h1>Physarum Pathfinder</h1>
-          <p class="lede">Place food terminals or load city hubs, paint light barriers, cut live tubes, and inspect the exact Laplacian pressure and conductivity equations adapting in real time.</p>
+          <p class="lede">Explore biological network design across three unified labs: fault-tolerant transport webs, Murray-law microfluidic &amp; soft-robotics channels, and continuous analog Linear Program solvers.</p>
         </div>
         <div class="status" aria-live="polite"><span class="status-dot"></span><span id="status-text">Ready</span></div>
       </header>
+
+      <nav class="domain-tabs" role="tablist" aria-label="Research domain lab">
+        <button type="button" role="tab" data-domain="transport" aria-selected="true">Transport Networks (Tero 2010)</button>
+        <button type="button" role="tab" data-domain="vascular" aria-selected="false">Vascular &amp; Soft Robotics</button>
+        <button type="button" role="tab" data-domain="optimization" aria-selected="false">Optimization &amp; Analog LP</button>
+      </nav>
 
       <div class="workspace">
         <section class="stage" aria-labelledby="simulation-heading">
@@ -31,6 +37,9 @@
               <button id="share" type="button">Copy link</button>
               <button id="export" type="button">Export PNG</button>
               <button id="export-csv" type="button">Export CSV</button>
+              <button id="export-svg" type="button" hidden>Export SVG (CAD)</button>
+              <button id="export-scad" type="button" hidden>Export OpenSCAD</button>
+              <button id="export-spice" type="button" hidden>Export SPICE (.cir)</button>
             </div>
           </div>
 
@@ -39,30 +48,30 @@
           </div>
           <p id="canvas-summary" class="visually-hidden">Network canvas.</p>
 
-          <div class="metrics-strip" aria-label="Live Tero network metrics">
+          <div class="metrics-strip" aria-label="Live network metrics">
             <div class="metric-card">
-              <span class="metric-label">Cost (TL / MST)</span>
+              <span id="metric-1-label" class="metric-label">Cost (TL / MST)</span>
               <strong id="metric-tl" class="metric-value">—</strong>
             </div>
             <div class="metric-card">
-              <span class="metric-label">Efficiency (MD)</span>
+              <span id="metric-2-label" class="metric-label">Efficiency (MD)</span>
               <strong id="metric-md" class="metric-value">—</strong>
             </div>
             <div class="metric-card">
-              <span class="metric-label">Fault Tolerance (FT)</span>
+              <span id="metric-3-label" class="metric-label">Fault Tolerance (FT)</span>
               <strong id="metric-ft" class="metric-value">—</strong>
             </div>
             <div class="metric-card">
-              <span class="metric-label">Solver (PCG)</span>
+              <span id="metric-4-label" class="metric-label">Solver (PCG)</span>
               <strong id="metric-pcg" class="metric-value">—</strong>
             </div>
             <div class="metric-card spark-card">
-              <span class="metric-label">History (<span class="legend-tl">TL</span> · <span class="legend-ft">FT</span>)</span>
-              <canvas id="sparkline" width="220" height="44" aria-label="TL and FT convergence history"></canvas>
+              <span id="spark-legend" class="metric-label">History (<span class="legend-tl">TL</span> · <span class="legend-ft">FT</span>)</span>
+              <canvas id="sparkline" width="220" height="44" aria-label="Live metric convergence history"></canvas>
             </div>
           </div>
 
-          <p id="edge-inspector" class="edge-inspector">Hover any path on the canvas to inspect its live Tero equation.</p>
+          <p id="edge-inspector" class="edge-inspector">Hover any path on the canvas to inspect its live equation.</p>
           <p id="stats" class="stats">0 nodes · 0 visible paths · 0 steps · 0 fps</p>
         </section>
 
@@ -71,6 +80,13 @@
             <h2>Scenario</h2>
             <label class="field">Preset
               <select id="preset"><option value="">Custom network</option></select>
+            </label>
+            <label class="field">Dynamics rule
+              <select id="dynamics-mode">
+                <option value="tero">Tero Saturating (2010)</option>
+                <option value="murray">Murray Vascular (r⁴)</option>
+                <option value="linear-lp">Linear LP (Bonifaci / SV)</option>
+              </select>
             </label>
             <label class="field">Flow model
               <select id="flow-mode">
@@ -83,6 +99,10 @@
                 <option value="complete">Complete graph</option>
                 <option value="delaunay">Delaunay mesh</option>
               </select>
+            </label>
+            <label id="max-radius-field" class="field" hidden>
+              <span class="field-line"><span>Max channel radius (mm)</span><output id="max-radius-value" for="max-radius">1.50</output></span>
+              <input type="range" id="max-radius" min="0.4" max="3.0" step="0.1" value="1.5" />
             </label>
             <label class="field">Seed
               <span class="seed-row">
@@ -99,19 +119,20 @@
               <button type="button" data-tool="source" aria-pressed="false">Source / Food</button>
               <button type="button" data-tool="sink" aria-pressed="false">Sink</button>
               <button type="button" data-tool="cut" aria-pressed="false">Cut Edge</button>
+              <button type="button" data-tool="cap" aria-pressed="false">Cap Edge (0.55)</button>
               <button type="button" data-tool="obstacle" aria-pressed="false">Paint Light</button>
               <button type="button" data-tool="erase" aria-pressed="false">Erase Light</button>
             </div>
             <div class="tool-actions">
               <button id="clear-obstacles" type="button">Clear obstacles</button>
             </div>
-            <p class="explanation placement-help">Click canvas to apply tool. Shift-click places Source/Food; Alt-click places Sink; drag to paint light barriers.</p>
+            <p class="explanation placement-help">Click canvas to apply tool. Shift-click places Source; Alt-click places Sink; drag to paint barriers; Cap Edge toggles bottleneck limits.</p>
           </section>
 
           <section class="panel">
             <h2>Dynamics</h2>
             <label class="field">
-              <span class="field-line"><span>Network character μ</span><output id="mu-value" for="mu">1.20</output></span>
+              <span class="field-line"><span>Feedback exponent μ</span><output id="mu-value" for="mu">1.20</output></span>
               <input type="range" id="mu" min="0.5" max="2" step="0.05" value="1.2" />
             </label>
             <label class="field">
@@ -129,7 +150,10 @@
             <div class="check-list">
               <label class="check-item"><input type="checkbox" id="show-mst" /> MST baseline (cost = 1.0)</label>
               <label class="check-item"><input type="checkbox" id="show-pressure" /> Pressure &amp; flow pulses</label>
-              <label class="check-item"><input type="checkbox" id="show-labels" /> Station labels</label>
+              <label class="check-item"><input type="checkbox" id="show-labels" /> Station / port labels</label>
+              <label id="show-shear-row" class="check-item" hidden><input type="checkbox" id="show-shear" /> Wall shear heatmap (τ<sub>w</sub>)</label>
+              <label id="show-opt-row" class="check-item" hidden><input type="checkbox" id="show-opt" /> Exact OPT baseline (violet)</label>
+              <label id="show-caps-row" class="check-item" hidden><input type="checkbox" id="show-caps" /> Capacity labels (|Q|/u)</label>
               <label class="check-item"><input type="checkbox" id="map-obstacle" /> Map brightness → obstacle</label>
             </div>
             <div class="field">
@@ -141,13 +165,19 @@
             </div>
           </section>
 
+          <section id="crossbar-panel" class="panel" hidden>
+            <h2>Analog Crossbar Matrix (G<sub>ij</sub>)</h2>
+            <canvas id="crossbar" width="240" height="240" aria-label="Analog resistor crossbar conductance matrix"></canvas>
+            <p id="crossbar-meta" class="explanation crossbar-meta">Active memristors: —</p>
+          </section>
+
           <section class="panel">
             <h2>Legend</h2>
             <ul class="legend">
-              <li><span class="swatch source"></span>Source / Food terminal (Multi-Terminal: amber)</li>
-              <li><span class="swatch sink"></span>Sink (consumes flow)</li>
-              <li><span class="swatch internal"></span>Junction (Steiner relay)</li>
-              <li><span class="swatch mst"></span>MST reference · Amber tint = high-cost light</li>
+              <li><span class="swatch source"></span>Source / Inlet (Multi-Terminal: amber)</li>
+              <li><span class="swatch sink"></span>Sink / Outlet (consumes flow)</li>
+              <li><span class="swatch internal"></span>Junction / Bifurcation node</li>
+              <li><span class="swatch mst"></span>MST (blue) · Exact OPT (violet)</li>
             </ul>
           </section>
         </aside>
@@ -169,30 +199,47 @@
           </article>
 
           <article class="learn-card">
-            <h3>2. Nonlinear Feedback (μ &lt; 1 vs μ &gt; 1)</h3>
-            <p class="formula">D<sub>t+1</sub> = (D<sub>t</sub> + Δt · |Q|<sup>μ</sup> / (1 + |Q|<sup>μ</sup>)) / (1 + Δt)</p>
-            <p>Semi-implicit integration keeps adaptation stable at large Δt. When <strong>μ &lt; 1</strong>, small parallel routes survive as a resilient mesh; when <strong>μ &gt; 1</strong>, positive feedback amplifies trunks and prunes weak detours into trees.</p>
-            <div class="learn-actions">
-              <button type="button" data-demo="mesh">Try Mesh (μ = 0.75)</button>
-              <button type="button" data-demo="tree">Try Tree (μ = 1.60)</button>
-            </div>
-          </article>
-
-          <article class="learn-card">
-            <h3>3. Multi-Terminal Tokyo Rail (2010)</h3>
+            <h3>2. Multi-Terminal Tokyo Rail (2010)</h3>
             <p class="formula">I<sub>0</sub> = 0.65 √(K / 2) &nbsp;&nbsp;|&nbsp;&nbsp; Q<sub>rms</sub> = √(⟨Q<sup>2</sup>⟩)</p>
-            <p>In Tero et al. (<em>Science</em>, 2010), all city hubs are equal food sources explored via random pairs, while bright light masks high-cost barriers like Tokyo Bay so corridors curve naturally around water.</p>
+            <p>In Tero et al. (<em>Science</em>, 2010), city hubs act as food terminals explored via random pairs while light masks high-cost barriers like Tokyo Bay, balancing cost (<code>TL/MST</code>) and fault tolerance (<code>FT</code>).</p>
             <div class="learn-actions">
               <button type="button" data-demo="tokyo">Run Tokyo Rail + MST</button>
             </div>
           </article>
 
           <article class="learn-card">
-            <h3>4. Fault Tolerance &amp; Self-Healing</h3>
-            <p class="formula">Performance = FT / (TL<sub>/MST</sub> · MD)</p>
-            <p>A Minimum Spanning Tree has minimum cost (<code>TL = 1.0</code>) but zero fault tolerance (<code>FT = 0</code>). Physarum balances low cost, short travel distance (<code>MD</code>), and redundant cycles that automatically regrow if a main link is severed.</p>
+            <h3>3. Vascular &amp; Microfluidic Murray's Law</h3>
+            <p class="formula">r<sub>p</sub><sup>3</sup> = Σ r<sub>c</sub><sup>3</sup> &nbsp;&nbsp;|&nbsp;&nbsp; D ∝ r<sup>4</sup>, μ = 4/3</p>
+            <p>Under Hagen–Poiseuille scaling (<code>r ∝ D<sup>1/4</sup></code>) and non-saturating power feedback at <code>μ = 4/3</code>, vascular trees equalize wall shear stress across branches for tissue scaffolds and heat-sink plates.</p>
             <div class="learn-actions">
-              <button type="button" data-demo="heal">Cut an Edge to Test Healing</button>
+              <button type="button" data-demo="vascular-murray">Run Tissue Scaffold + Shear</button>
+            </div>
+          </article>
+
+          <article class="learn-card">
+            <h3>4. Soft-Robotics Puncture-Tolerant Actuator</h3>
+            <p class="formula">Performance = FT / (TL · MD) &nbsp;&nbsp;|&nbsp;&nbsp; D ≥ 10<sup>−5</sup></p>
+            <p>Sub-Murray exponent (<code>μ = 1.15</code>) retains redundant loops across compliant pneumatic channels. Sever any primary supply line with <strong>Cut Edge</strong> to observe pressure-driven bypass regrowth.</p>
+            <div class="learn-actions">
+              <button type="button" data-demo="soft-actuator-heal">Cut Soft Finger Manifold</button>
+            </div>
+          </article>
+
+          <article class="learn-card">
+            <h3>5. Shortest Path &amp; Lyapunov Mirror Descent</h3>
+            <p class="formula">E(D) = ½ (Σ c<sub>e</sub> D<sub>e</sub> + b<sup>T</sup> p) &nbsp;&nbsp;|&nbsp;&nbsp; dD/dt = |Q| − D</p>
+            <p>Bonifaci et al. (2012) proved linear Physarum dynamics monotonically minimizes Lyapunov energy <code>E(D)</code> via mirror descent, converging onto the exact weighted shortest path without explicit Dijkstra search.</p>
+            <div class="learn-actions">
+              <button type="button" data-demo="opt-shortest">Run Shortest Path + OPT</button>
+            </div>
+          </article>
+
+          <article class="learn-card">
+            <h3>6. Capacitated Min-Cost Flow &amp; Crossbar</h3>
+            <p class="formula">c<sub>eff</sub> = c<sub>e</sub> (1 + λ<sub>e</sub>) &nbsp;&nbsp;|&nbsp;&nbsp; λ̇ ∝ (Q<sub>pred</sub> − u<sub>e</sub>)</p>
+            <p>Following Straszak &amp; Vishnoi (2016), dual congestion prices <code>λ<sub>e</sub></code> reroute overflow around capped corridors onto longer paths while pruning unused memristor crosspoints to <code>OFF</code> for SPICE export.</p>
+            <div class="learn-actions">
+              <button type="button" data-demo="opt-mcf">Run Capacitated MCF + Badges</button>
             </div>
           </article>
         </div>

@@ -7,6 +7,7 @@
 }
 
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 
 body {
   margin: 0;
@@ -40,6 +41,24 @@ h1 { margin: 0; font-size: clamp(1.75rem, 4vw, 3rem); letter-spacing: -0.045em; 
 .lede { max-width: 48rem; margin: 0.65rem 0 0; color: #a9b0aa; line-height: 1.5; font-size: 0.94rem; }
 .status { display: flex; align-items: center; gap: 0.55rem; white-space: nowrap; color: #c8cec9; font-size: 0.85rem; }
 .status-dot { width: 0.55rem; height: 0.55rem; border-radius: 50%; background: #a3e66f; box-shadow: 0 0 1rem rgba(163, 230, 111, 0.7); }
+
+.domain-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.9rem;
+}
+.domain-tabs button[role="tab"] {
+  padding: 0.55rem 0.95rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #a9b0aa;
+}
+.domain-tabs button[role="tab"][aria-selected="true"] {
+  border-color: #a3e66f;
+  background: #1a2716;
+  color: #e4f8d2;
+}
 
 .workspace { display: grid; grid-template-columns: minmax(0, 1fr) 20.5rem; gap: 1rem; align-items: start; }
 .stage, .panel, .learn-card { border: 1px solid #252a2e; background: rgba(14, 17, 20, 0.94); border-radius: 14px; }
@@ -119,9 +138,20 @@ select, input[type="number"] { width: 100%; padding: 0.5rem 0.62rem; }
 .explanation strong { color: #eef1ed; }
 .placement-help { margin-top: 0.7rem; }
 
+canvas#crossbar {
+  display: block;
+  width: 100%;
+  max-width: 240px;
+  aspect-ratio: 1 / 1;
+  margin: 0 auto 0.55rem;
+  border-radius: 8px;
+  border: 1px solid #252a2e;
+}
+.crossbar-meta { font-variant-numeric: tabular-nums; }
+
 .learn-section { margin-top: 1.35rem; }
 .learn-header h2 { margin: 0 0 0.8rem; font-size: 1.25rem; letter-spacing: -0.02em; }
-.learn-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.85rem; }
+.learn-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.85rem; }
 .learn-card { padding: 1rem; display: flex; flex-direction: column; gap: 0.55rem; }
 .learn-card h3 { margin: 0; font-size: 0.98rem; color: #f4f4ef; }
 .learn-card p { margin: 0; color: #a9b0aa; font-size: 0.82rem; line-height: 1.52; }

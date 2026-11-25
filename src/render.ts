@@ -1,4 +1,5 @@
-import type { FlowMode, Graph } from './graph';
+import type { FlowMode, Graph, LabDomain } from './graph';
+import { effectiveEdgeCost } from './solver';
 import type { TerrainField } from './terrain';
 
 function lerp(a: number, b: number, t: number): number {
@@ -10,17 +11,36 @@ function clamp01(v: number): number {
 }
 
 export interface RenderOptions {
+  domain?: LabDomain;
   backgroundImage?: HTMLImageElement | null;
   terrain?: TerrainField | null;
   flowMode?: FlowMode;
   showMst?: boolean;
   mstEdgeIndices?: number[];
+  showOptimalBaseline?: boolean;
+  optimalEdgeIndices?: number[];
   showPressure?: boolean;
   pressures?: number[];
   showFlowParticles?: boolean;
   phase?: number;
   hoveredEdgeIndex?: number | null;
   showLabels?: boolean;
+  showShearHeatmap?: boolean;
+  edgeShearNorm?: number[];
+  showCapacityBadges?: boolean;
+}
+
+function shearHeatmapColor(shear: number): string {
+  if (!Number.isFinite(shear) || shear <= 0.7) {
+    return '#2563eb';
+  }
+  if (shear <= 1.2) {
+    return '#059669';
+  }
+  if (shear <= 1.65) {
+    return '#d97706';
+  }
+  return '#dc2626';
 }
 
 function pressureColor(t: number): string {
@@ -88,7 +108,31 @@ export function render(ctx: CanvasRenderingContext2D, graph: Graph, options: Ren
     ctx.restore();
   }
 
+  // 2b. Optional exact SSAP Min-Cost Flow / Shortest-Path baseline overlay
+  if (
+    options.showOptimalBaseline &&
+    options.optimalEdgeIndices &&
+    options.optimalEdgeIndices.length > 0
+  ) {
+    ctx.save();
+    ctx.strokeStyle = 'rgba(139, 92, 246, 0.72)';
+    ctx.lineWidth = 3.2;
+    ctx.setLineDash([7, 4]);
+    for (const idx of options.optimalEdgeIndices) {
+      const edge = graph.edges[idx];
+      if (!edge) continue;
+      const a = graph.nodes[edge.i];
+      const b = graph.nodes[edge.j];
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
   // 3. Physarum tubes + severed markers
+  const domain = options.domain ?? 'transport';
   ctx.save();
   ctx.lineCap = 'round';
   for (let idx = 0; idx < graph.edges.length; idx++) {
@@ -124,10 +168,41 @@ export function render(ctx: CanvasRenderingContext2D, graph: Graph, options: Ren
     const d = clamp01(edge.D);
     if (d <= 0.003 && idx !== options.hoveredEdgeIndex) continue;
 
+    let strokeWidth = lerp(0.6, 8.5, d);
+    let alpha = Math.max(0.04, d);
+    let strokeStyle =
+      idx === options.hoveredEdgeIndex
+        ? '#15803d'
+        : d > 0.6
+          ? '#1c1917'
+          : '#1e241b';
+
+    if (domain === 'vascular') {
+      strokeWidth = lerp(1.0, 12.0, Math.pow(d, 0.25));
+      alpha = d >= 0.01 ? Math.max(0.45, Math.pow(d, 0.35)) : Math.max(0.04, d);
+      if (idx === options.hoveredEdgeIndex) {
+        strokeStyle = '#15803d';
+      } else if (options.showShearHeatmap && options.edgeShearNorm) {
+        strokeStyle = shearHeatmapColor(options.edgeShearNorm[idx] ?? 0);
+      } else {
+        strokeStyle = d > 0.45 ? '#991b1b' : '#dc2626';
+      }
+    } else if (domain === 'optimization') {
+      strokeWidth = lerp(0.8, 9.5, clamp01(edge.D));
+      alpha = d >= 0.01 ? Math.max(0.28, d) : Math.max(0.04, d);
+      if (idx === options.hoveredEdgeIndex) {
+        strokeStyle = '#15803d';
+      } else if (edge.capacity !== undefined && Math.abs(edge.flow) >= 0.96 * edge.capacity) {
+        strokeStyle = '#d97706';
+      } else {
+        strokeStyle = d > 0.5 ? '#0f766e' : '#0284c7';
+      }
+    }
+
     if (idx === options.hoveredEdgeIndex) {
       ctx.save();
       ctx.strokeStyle = 'rgba(22, 163, 74, 0.35)';
-      ctx.lineWidth = lerp(0.8, 8.5, d) + 6;
+      ctx.lineWidth = strokeWidth + 6;
       ctx.beginPath();
       ctx.moveTo(a.x, a.y);
       ctx.lineTo(b.x, b.y);
@@ -135,14 +210,9 @@ export function render(ctx: CanvasRenderingContext2D, graph: Graph, options: Ren
       ctx.restore();
     }
 
-    ctx.globalAlpha = Math.max(0.04, d);
-    ctx.strokeStyle =
-      idx === options.hoveredEdgeIndex
-        ? '#15803d'
-        : d > 0.6
-          ? '#1c1917'
-          : '#1e241b';
-    ctx.lineWidth = lerp(0.6, 8.5, d);
+    ctx.globalAlpha = alpha;
+    ctx.strokeStyle = strokeStyle;
+    ctx.lineWidth = strokeWidth;
     ctx.beginPath();
     ctx.moveTo(a.x, a.y);
     ctx.lineTo(b.x, b.y);
@@ -153,9 +223,11 @@ export function render(ctx: CanvasRenderingContext2D, graph: Graph, options: Ren
   // 4. Optional animated flow pulses
   if (options.showFlowParticles) {
     const phase = options.phase ?? 0;
+    const minParticleD = domain === 'transport' ? 0.08 : 0.015;
+    const minParticleFlow = domain === 'transport' ? 0.03 : 0.015;
     ctx.save();
     for (const edge of graph.edges) {
-      if (edge.severed || edge.D <= 0.08 || Math.abs(edge.flow) <= 0.03) continue;
+      if (edge.severed || edge.D <= minParticleD || Math.abs(edge.flow) <= minParticleFlow) continue;
       const a = graph.nodes[edge.i];
       const b = graph.nodes[edge.j];
       const forward = edge.flow >= 0;
@@ -168,7 +240,7 @@ export function render(ctx: CanvasRenderingContext2D, graph: Graph, options: Ren
         const t = (phase + k / count) % 1;
         const px = lerp(sx, ex, t);
         const py = lerp(sy, ey, t);
-        ctx.fillStyle = '#a3e66f';
+        ctx.fillStyle = domain === 'vascular' ? '#fecaca' : domain === 'optimization' ? '#5eead4' : '#a3e66f';
         ctx.strokeStyle = '#141812';
         ctx.lineWidth = 1;
         ctx.beginPath();
@@ -176,6 +248,39 @@ export function render(ctx: CanvasRenderingContext2D, graph: Graph, options: Ren
         ctx.fill();
         ctx.stroke();
       }
+    }
+    ctx.restore();
+  }
+
+  // 4b. Optional capacity utilization badges on capacitated edges
+  if (options.showCapacityBadges) {
+    ctx.save();
+    ctx.font = '600 10px ui-monospace, SFMono-Regular, Menlo, monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    for (const edge of graph.edges) {
+      if (edge.severed || edge.capacity === undefined || !Number.isFinite(edge.capacity)) continue;
+      const a = graph.nodes[edge.i];
+      const b = graph.nodes[edge.j];
+      const mx = (a.x + b.x) / 2;
+      const my = (a.y + b.y) / 2;
+      const qAbs = Math.abs(edge.flow);
+      const saturated = qAbs >= 0.96 * edge.capacity;
+      const text = `${qAbs.toFixed(2)}/${edge.capacity.toFixed(2)}`;
+      const padX = 4;
+      const boxW = ctx.measureText(text).width + padX * 2;
+      const boxH = 16;
+
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.88)';
+      ctx.strokeStyle = saturated ? '#f59e0b' : '#38bdf8';
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.roundRect(mx - boxW / 2, my - boxH / 2, boxW, boxH, 4);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = saturated ? '#fde68a' : '#bae6fd';
+      ctx.fillText(text, mx, my);
     }
     ctx.restore();
   }
@@ -255,4 +360,98 @@ export function render(ctx: CanvasRenderingContext2D, graph: Graph, options: Ren
     }
   }
   ctx.restore();
+}
+
+/**
+ * Render an N x N symmetric memristor crossbar conductance heatmap G_ij
+ * illustrating active ON crosspoints vs pruned OFF crosspoints.
+ */
+export function renderCrossbarMatrix(ctx: CanvasRenderingContext2D, graph: Graph): void {
+  const w = ctx.canvas.width;
+  const h = ctx.canvas.height;
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = '#0b1014';
+  ctx.fillRect(0, 0, w, h);
+
+  const n = graph.nodes.length;
+  if (n === 0) {
+    ctx.fillStyle = '#8e9790';
+    ctx.font = '12px Inter, ui-sans-serif, system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('No crossbar nodes', w / 2, h / 2);
+    return;
+  }
+
+  let maxG = 0;
+  for (const edge of graph.edges) {
+    if (edge.severed) continue;
+    const congestionScale = 1 + Math.max(edge.congestion ?? 0, 0);
+    const g = edge.D / (effectiveEdgeCost(edge) * congestionScale);
+    if (g > maxG) maxG = g;
+  }
+  const denom = Math.max(0.35, Math.log10(1 + maxG * 200));
+
+  const pad = 8;
+  const size = Math.min(w, h) - pad * 2;
+  const cell = size / n;
+  const ox = (w - size) / 2;
+  const oy = (h - size) / 2;
+
+  for (let i = 0; i < n; i++) {
+    ctx.fillStyle = '#161d24';
+    ctx.fillRect(ox + i * cell, oy + i * cell, cell, cell);
+  }
+
+  for (const edge of graph.edges) {
+    const x1 = ox + edge.i * cell;
+    const y1 = oy + edge.j * cell;
+    const x2 = ox + edge.j * cell;
+    const y2 = oy + edge.i * cell;
+
+    if (edge.severed) {
+      ctx.fillStyle = '#450a0a';
+      ctx.fillRect(x1, y1, cell, cell);
+      ctx.fillRect(x2, y2, cell, cell);
+      continue;
+    }
+
+    const congestionScale = 1 + Math.max(edge.congestion ?? 0, 0);
+    const g = edge.D / (effectiveEdgeCost(edge) * congestionScale);
+    const norm = clamp01(Math.log10(1 + g * 200) / denom);
+
+    if (edge.D < 0.01) {
+      ctx.fillStyle = '#11161c';
+    } else if (norm < 0.5) {
+      const u = norm * 2;
+      const r = Math.round(lerp(15, 14, u));
+      const gr = Math.round(lerp(23, 165, u));
+      const b = Math.round(lerp(42, 233, u));
+      ctx.fillStyle = `rgb(${r}, ${gr}, ${b})`;
+    } else {
+      const u = (norm - 0.5) * 2;
+      const r = Math.round(lerp(14, 163, u));
+      const gr = Math.round(lerp(165, 230, u));
+      const b = Math.round(lerp(233, 111, u));
+      ctx.fillStyle = `rgb(${r}, ${gr}, ${b})`;
+    }
+
+    ctx.fillRect(x1, y1, cell, cell);
+    ctx.fillRect(x2, y2, cell, cell);
+  }
+
+  if (n <= 28) {
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.07)';
+    ctx.lineWidth = 0.6;
+    for (let k = 0; k <= n; k++) {
+      const pos = ox + k * cell;
+      const posY = oy + k * cell;
+      ctx.beginPath();
+      ctx.moveTo(pos, oy);
+      ctx.lineTo(pos, oy + size);
+      ctx.moveTo(ox, posY);
+      ctx.lineTo(ox + size, posY);
+      ctx.stroke();
+    }
+  }
 }

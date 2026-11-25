@@ -1,10 +1,11 @@
-import type { FlowMode, Graph } from './graph';
-import { solvePressuresDetailed } from './solver';
+import type { DynamicsMode, FlowMode, Graph } from './graph';
+import { effectiveEdgeCost, solvePressuresDetailed } from './solver';
 
 export const D_LIVING_FLOOR = 1e-5;
 
 export interface StepOptions {
   flowMode?: FlowMode;
+  dynamicsMode?: DynamicsMode;
   random?: () => number;
   prevPressures?: number[];
   pairSamples?: number;
@@ -20,8 +21,19 @@ export interface StepMetrics {
   activePair?: [number, number];
 }
 
-function clampConductivity(value: number): number {
-  return Math.max(D_LIVING_FLOOR, Math.min(1, value));
+function clampConductivity(value: number, maxD = 1): number {
+  return Math.max(D_LIVING_FLOOR, Math.min(maxD, value));
+}
+
+function targetConductivity(qMag: number, mu: number, dynamicsMode: DynamicsMode): number {
+  if (dynamicsMode === 'murray') {
+    return Math.min(1, Math.pow(qMag, mu));
+  }
+  if (dynamicsMode === 'linear-lp') {
+    return qMag;
+  }
+  const qm = Math.pow(qMag, mu);
+  return qm / (1 + qm);
 }
 
 function sampleTerminalPairs(
@@ -62,8 +74,9 @@ function sampleTerminalPairs(
 }
 
 /**
- * Advance one Tero et al. (2010) conductivity adaptation tick using
- * unconditionally stable semi-implicit Euler integration.
+ * Advance one Physarum conductivity adaptation tick using
+ * unconditionally stable semi-implicit Euler integration across
+ * Tero (2010), Murray vascular (1926/2013), or Linear LP (Bonifaci/SV) dynamics.
  */
 export function step(
   graph: Graph,
@@ -72,6 +85,7 @@ export function step(
   options: StepOptions = {},
 ): StepMetrics {
   const flowMode = options.flowMode ?? 'source-sink';
+  const dynamicsMode: DynamicsMode = options.dynamicsMode ?? 'tero';
   if (graph.edges.length === 0) {
     return {
       maxChange: 0,
@@ -83,7 +97,7 @@ export function step(
     };
   }
 
-  if (flowMode === 'multi-terminal') {
+  if (flowMode === 'multi-terminal' && dynamicsMode !== 'linear-lp') {
     const terminals: number[] = [];
     for (const node of graph.nodes) {
       if (node.flow !== 0) terminals.push(node.id);
@@ -126,7 +140,8 @@ export function step(
       for (let eIdx = 0; eIdx < nEdges; eIdx++) {
         const edge = graph.edges[eIdx];
         if (edge.severed) continue;
-        const w = edge.D / (edge.length * Math.max(edge.costFactor ?? 1, 1));
+        const congestionScale = 1 + Math.max(edge.congestion ?? 0, 0);
+        const w = edge.D / (effectiveEdgeCost(edge) * congestionScale);
         const qSigned = w * (lastPressures[edge.i] - lastPressures[edge.j]);
         flowSqSum[eIdx] += qSigned * qSigned;
         lastSignedFlow[eIdx] = qSigned;
@@ -146,9 +161,8 @@ export function step(
       const rmsFlow = Math.sqrt(flowSqSum[eIdx] / m);
       const sign = lastSignedFlow[eIdx] < 0 ? -1 : 1;
       edge.flow = rmsFlow * sign;
-      const qm = Math.pow(rmsFlow, mu);
-      const f = qm / (1 + qm);
-      const nextD = clampConductivity((edge.D + dt * f) / (1 + dt));
+      const f = targetConductivity(rmsFlow, mu, dynamicsMode);
+      const nextD = clampConductivity((edge.D + dt * f) / (1 + dt), 1);
       const change = nextD - edge.D;
       edge.D = nextD;
       maxChange = Math.max(maxChange, Math.abs(change));
@@ -168,6 +182,7 @@ export function step(
 
   const solved = solvePressuresDetailed(graph, undefined, options.prevPressures);
   const p = solved.pressures;
+  const maxD = dynamicsMode === 'linear-lp' ? 10 : 1;
   let maxChange = 0;
   let totalChange = 0;
 
@@ -175,18 +190,34 @@ export function step(
     if (edge.severed) {
       edge.D = 0;
       edge.flow = 0;
+      edge.congestion = 0;
       continue;
     }
-    const w = edge.D / (edge.length * Math.max(edge.costFactor ?? 1, 1));
+    const congestionScale = 1 + Math.max(edge.congestion ?? 0, 0);
+    const w = edge.D / (effectiveEdgeCost(edge) * congestionScale);
     const qSigned = w * (p[edge.i] - p[edge.j]);
     edge.flow = qSigned;
-    const qm = Math.pow(Math.abs(qSigned), mu);
-    const f = qm / (1 + qm);
-    const nextD = clampConductivity((edge.D + dt * f) / (1 + dt));
+    const qMag = Math.abs(qSigned);
+    const f = targetConductivity(qMag, mu, dynamicsMode);
+    const nextD = clampConductivity((edge.D + dt * f) / (1 + dt), maxD);
     const change = nextD - edge.D;
     edge.D = nextD;
-    maxChange = Math.max(maxChange, Math.abs(change));
-    totalChange += Math.abs(change);
+
+    let edgeDelta = Math.abs(change);
+    if (
+      dynamicsMode === 'linear-lp' &&
+      edge.capacity !== undefined &&
+      Number.isFinite(edge.capacity)
+    ) {
+      const oldLambda = edge.congestion ?? 0;
+      const qPred = qMag + 0.8 * (qMag - nextD);
+      const nextLambda = Math.min(50, Math.max(0, oldLambda + dt * 2.0 * (qPred - edge.capacity)));
+      edge.congestion = nextLambda;
+      edgeDelta = Math.max(edgeDelta, Math.abs(nextLambda - oldLambda) * 0.05);
+    }
+
+    maxChange = Math.max(maxChange, edgeDelta);
+    totalChange += edgeDelta;
   }
 
   return {
