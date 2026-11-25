@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.1.0 - 2026-11-25
+
+- Added **Factory FJSP · Two-Level** lab (`fjsp` domain + explicit DAG substrate): Upper-layer multi-stage Jewelry Factory flow balancing (`Wax → Casting → Filing → Setting → Polish → Plating → QC`), normalized bottleneck shadow prices (`λ / (1 + λ)`), `Cut Edge` machine disruption rerouting, and Lower-layer non-overlapping active decoder + independent hard-constraint verifier (`verifyFjspSchedule`), Gantt visualization, warm-started **OR-Tools CP-SAT `.py`** export, and **Schedule `.json`** export.
+- Added **100-PO Factory · FG + SG Multi-Model** scenario (`40 FG-Full`, `35 FG-from-SG`, `25 SG-Stock` with 20 BOM links, PO due dates, and weighted tardiness tracking).
+- Added **ERP Master Scheduler · SO→PO + MRP + Cash Flow** scenario (`560 min/day` non-preemptive shift calendar, `20 SO → 80 multi-model POs`, `SG → Warehouse (wh-io) → Assembly (asm-1/asm-2) → FG` round-trip, time-phased MRP raw-material gating, daily Cash Flow working-capital chart & MRP/SO tables; expanded to 16 presets and 52 unit tests across 12 test files).
+
 ## 3.0.0 - 2026-11-25
 
 - Added **Vascular, Microfluidics & Soft Robotics** lab (`murray` power-law dynamics with Hagen–Poiseuille `D ∝ r⁴` scaling, Murray's Law & wall shear stress metrics/heatmap, **Tissue Scaffold**, **Cold Plate**, and **Soft Actuator** presets, plus 1:1 mm SVG and parametric OpenSCAD CAD exports).
