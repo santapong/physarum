@@ -3,16 +3,16 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="Explore how Physarum polycephalum solves transport networks, microfluidic/soft-robotics vasculature, and mathematical optimization on analog resistor crossbars." />
-    <title>Physarum Pathfinder — 3-Lab Adaptive Network Workbench</title>
+    <meta name="description" content="Explore how Physarum polycephalum solves transport networks, microfluidic/soft-robotics vasculature, analog LP optimization, and two-level multi-cell FJSP." />
+    <title>Physarum Pathfinder — 4-Lab Adaptive Network Workbench</title>
   </head>
   <body>
     <main class="app-shell">
       <header class="masthead">
         <div>
-          <p class="eyebrow">Adaptive network laboratory · Tero (2010) · Murray Vascular · Bonifaci/SV Analog LP</p>
+          <p class="eyebrow">Adaptive network laboratory · Tero (2010) · Murray Vascular · Analog LP · Two-Level FJSP</p>
           <h1>Physarum Pathfinder</h1>
-          <p class="lede">Explore biological network design across three unified labs: fault-tolerant transport webs, Murray-law microfluidic &amp; soft-robotics channels, and continuous analog Linear Program solvers.</p>
+          <p class="lede">Explore biological network design across four unified labs: transport webs, Murray-law microfluidic &amp; soft-robotics channels, analog Linear Program solvers, and two-level multi-cell jewelry FJSP scheduling.</p>
         </div>
         <div class="status" aria-live="polite"><span class="status-dot"></span><span id="status-text">Ready</span></div>
       </header>
@@ -21,6 +21,7 @@
         <button type="button" role="tab" data-domain="transport" aria-selected="true">Transport Networks (Tero 2010)</button>
         <button type="button" role="tab" data-domain="vascular" aria-selected="false">Vascular &amp; Soft Robotics</button>
         <button type="button" role="tab" data-domain="optimization" aria-selected="false">Optimization &amp; Analog LP</button>
+        <button type="button" role="tab" data-domain="fjsp" aria-selected="false">Factory FJSP · Two-Level</button>
       </nav>
 
       <div class="workspace">
@@ -40,6 +41,8 @@
               <button id="export-svg" type="button" hidden>Export SVG (CAD)</button>
               <button id="export-scad" type="button" hidden>Export OpenSCAD</button>
               <button id="export-spice" type="button" hidden>Export SPICE (.cir)</button>
+              <button id="export-cpsat" type="button" hidden>Export CP-SAT (.py)</button>
+              <button id="export-schedule" type="button" hidden>Export Schedule (.json)</button>
             </div>
           </div>
 
@@ -73,6 +76,55 @@
 
           <p id="edge-inspector" class="edge-inspector">Hover any path on the canvas to inspect its live equation.</p>
           <p id="stats" class="stats">0 nodes · 0 visible paths · 0 steps · 0 fps</p>
+
+          <section id="gantt-section" class="gantt-section" aria-label="Lower-layer discrete FJSP Gantt schedule" hidden>
+            <div class="gantt-header">
+              <div class="gantt-title-row">
+                <strong>Lower-Layer Discrete FJSP Gantt</strong>
+                <span id="fjsp-verify-badge" class="fjsp-badge is-valid">Verified</span>
+              </div>
+              <button id="fjsp-toggle-view" type="button">Show Greedy Baseline</button>
+            </div>
+            <canvas id="gantt" width="900" height="320" aria-label="Lower-layer multi-cell jewelry FJSP Gantt chart"></canvas>
+            <div class="gantt-legend">
+              <span><i class="gantt-swatch alloy-18ky"></i>18K-Y</span>
+              <span><i class="gantt-swatch alloy-18kr"></i>18K-R</span>
+              <span><i class="gantt-swatch alloy-925"></i>925 Silver</span>
+              <span><i class="gantt-swatch alloy-pt950"></i>PT950</span>
+              <span><i class="gantt-swatch alloy-setup"></i>Alloy Setup</span>
+              <span>↻ Re-entrant Polish</span>
+            </div>
+          </section>
+
+          <section id="erp-panel" class="erp-panel" aria-label="ERP Master Scheduler MRP and Cash Flow" hidden>
+            <div class="gantt-header">
+              <div class="gantt-title-row">
+                <strong>ERP Master Scheduler · MRP, Warehouse &amp; Cash Flow (560 min/day)</strong>
+              </div>
+              <div class="erp-badges">
+                <span id="erp-mrp-badge" class="fjsp-badge is-valid">0 stockouts</span>
+                <span id="erp-cash-badge" class="fjsp-badge is-valid">Cash +</span>
+              </div>
+            </div>
+            <canvas id="cashflow" width="900" height="215" aria-label="Daily cash flow and cumulative working capital balance"></canvas>
+            <div class="gantt-legend">
+              <span><i class="gantt-swatch cash-two"></i>Two-Level Cash</span>
+              <span><i class="gantt-swatch cash-greedy"></i>Greedy Cash</span>
+              <span><i class="gantt-swatch cash-in"></i>Inflow (SO Deposit + Ship Balance)</span>
+              <span><i class="gantt-swatch cash-out"></i>Outflow (MRP Mat + Labor/WIP)</span>
+              <span>● Min-Cash Trough</span>
+            </div>
+            <div class="erp-grid">
+              <div class="erp-card">
+                <h3>MRP Raw Materials &amp; SG Warehouse</h3>
+                <div id="mrp-summary" class="erp-table-wrap"></div>
+              </div>
+              <div class="erp-card">
+                <h3>Sales Orders (SO → Multi-PO → Models)</h3>
+                <div id="so-summary" class="erp-table-wrap"></div>
+              </div>
+            </div>
+          </section>
         </section>
 
         <aside class="sidebar" aria-label="Simulation controls">
@@ -98,12 +150,18 @@
               <select id="mode">
                 <option value="complete">Complete graph</option>
                 <option value="delaunay">Delaunay mesh</option>
+                <option value="explicit">Factory DAG (Explicit)</option>
               </select>
             </label>
             <label id="max-radius-field" class="field" hidden>
               <span class="field-line"><span>Max channel radius (mm)</span><output id="max-radius-value" for="max-radius">1.50</output></span>
               <input type="range" id="max-radius" min="0.4" max="3.0" step="0.1" value="1.5" />
             </label>
+            <label id="fjsp-weight-field" class="field" hidden>
+              <span class="field-line"><span>Physarum guidance α</span><output id="fjsp-weight-value" for="fjsp-weight">0.90</output></span>
+              <input type="range" id="fjsp-weight" min="0" max="2" step="0.1" value="0.9" />
+            </label>
+            <label id="fjsp-shift-row" class="check-item fjsp-shift-row" hidden><input type="checkbox" id="fjsp-shift-cap" /> 560 min/day shift limit</label>
             <label class="field">Seed
               <span class="seed-row">
                 <input id="seed" type="number" min="1" step="1" value="1207" />
@@ -240,6 +298,26 @@
             <p>Following Straszak &amp; Vishnoi (2016), dual congestion prices <code>λ<sub>e</sub></code> reroute overflow around capped corridors onto longer paths while pruning unused memristor crosspoints to <code>OFF</code> for SPICE export.</p>
             <div class="learn-actions">
               <button type="button" data-demo="opt-mcf">Run Capacitated MCF + Badges</button>
+            </div>
+          </article>
+
+          <article class="learn-card">
+            <h3>7. Multi-Cell Jewelry Factory Flow</h3>
+            <p class="formula">Upper: λ<sub>e</sub>(D, Q) &nbsp;→&nbsp; Lower: No-Overlap + Setup</p>
+            <p>Upper-layer Physarum balances a 7-stage jewelry workflow (<code>Wax → Casting → Filing → Setting → Polish → Plating → QC</code>) and feeds shadow prices <code>λ<sub>e</sub></code> to the Lower-Layer FJSP decoder.</p>
+            <div class="learn-actions">
+              <button type="button" data-demo="fjsp-atelier">Run Two-Level Jewelry Lab</button>
+              <button type="button" data-demo="fjsp-100po">Try 100-PO (FG + SG)</button>
+              <button type="button" data-demo="fjsp-erp">Try ERP Master Scheduler</button>
+            </div>
+          </article>
+
+          <article class="learn-card">
+            <h3>8. Kiln/Bench Disruption Rescheduling</h3>
+            <p class="formula">Sever Cell → Reroute Flow → Re-Verify Gantt</p>
+            <p>Use <strong>Cut Edge</strong> on <code>cast-18k</code> to watch flow shift to <code>cast-flex</code> and rebuild a zero-overlap Gantt, or sever sole Micro-Pavé <code>set-pave</code> to catch genuine infeasibility.</p>
+            <div class="learn-actions">
+              <button type="button" data-demo="fjsp-disrupt">Test Kiln Disruption</button>
             </div>
           </article>
         </div>

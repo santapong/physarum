@@ -16,6 +16,17 @@ export interface Edge {
   severed?: boolean;
   capacity?: number;
   congestion?: number;
+  cellId?: string;
+  stage?: string;
+}
+
+export interface ExplicitEdgeSpec {
+  i: number;
+  j: number;
+  costFactor?: number;
+  capacity?: number;
+  cellId?: string;
+  stage?: string;
 }
 
 export interface Graph {
@@ -24,9 +35,9 @@ export interface Graph {
   adj: number[][];
 }
 
-export type GraphMode = 'complete' | 'delaunay';
+export type GraphMode = 'complete' | 'delaunay' | 'explicit';
 export type FlowMode = 'source-sink' | 'multi-terminal';
-export type LabDomain = 'transport' | 'vascular' | 'optimization';
+export type LabDomain = 'transport' | 'vascular' | 'optimization' | 'fjsp';
 export type DynamicsMode = 'tero' | 'murray' | 'linear-lp';
 
 function initialD(random: () => number): number {
@@ -180,9 +191,78 @@ export function buildDelaunayGraph(nodes: Node[], random: () => number = Math.ra
   return graph;
 }
 
-export function rebuildGraph(graph: Graph, mode: GraphMode, random: () => number = Math.random): Graph {
-  const next = mode === 'delaunay' ? buildDelaunayGraph(graph.nodes, random) : buildCompleteGraph(graph.nodes, random);
-  return next;
+export function buildExplicitGraph(
+  nodes: Node[],
+  edgeSpecs: ExplicitEdgeSpec[],
+  random: () => number = Math.random,
+): Graph {
+  const graph: Graph = { nodes: nodes.map((n) => ({ ...n })), edges: [], adj: [] };
+  for (let k = 0; k < nodes.length; k++) graph.adj.push([]);
+  const seen = new Set<string>();
+  for (const spec of edgeSpecs) {
+    if (
+      spec.i < 0 ||
+      spec.j < 0 ||
+      spec.i >= nodes.length ||
+      spec.j >= nodes.length ||
+      spec.i === spec.j
+    ) {
+      continue;
+    }
+    const a = Math.min(spec.i, spec.j);
+    const b = Math.max(spec.i, spec.j);
+    const key = `${a}_${b}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    const dx = graph.nodes[a].x - graph.nodes[b].x;
+    const dy = graph.nodes[a].y - graph.nodes[b].y;
+    const length = Math.max(Math.hypot(dx, dy), 1e-6);
+    const idx = graph.edges.length;
+    const edge: Edge = {
+      i: a,
+      j: b,
+      length,
+      D: initialD(random),
+      costFactor: Math.max(spec.costFactor ?? 1, 0.1),
+      flow: 0,
+      severed: false,
+      congestion: 0,
+    };
+    if (spec.capacity !== undefined && Number.isFinite(spec.capacity) && spec.capacity > 0) {
+      edge.capacity = spec.capacity;
+    }
+    if (spec.cellId) edge.cellId = spec.cellId;
+    if (spec.stage) edge.stage = spec.stage;
+    graph.edges.push(edge);
+    graph.adj[a].push(idx);
+    graph.adj[b].push(idx);
+  }
+  return graph;
+}
+
+export function rebuildGraph(
+  graph: Graph,
+  mode: GraphMode,
+  random: () => number = Math.random,
+  explicitSpecs?: ExplicitEdgeSpec[],
+): Graph {
+  if (mode === 'explicit') {
+    const specs: ExplicitEdgeSpec[] =
+      explicitSpecs ??
+      graph.edges.map((e) => ({
+        i: e.i,
+        j: e.j,
+        costFactor: e.costFactor,
+        capacity: e.capacity,
+        cellId: e.cellId,
+        stage: e.stage,
+      }));
+    return buildExplicitGraph(graph.nodes, specs, random);
+  }
+  return mode === 'delaunay'
+    ? buildDelaunayGraph(graph.nodes, random)
+    : buildCompleteGraph(graph.nodes, random);
 }
 
 export function addNode(
@@ -196,6 +276,22 @@ export function addNode(
   const id = graph.nodes.length;
   const nodes = graph.nodes.map((n) => ({ ...n }));
   nodes.push({ id, x, y, flow });
+  if (mode === 'explicit') {
+    const next: Graph = {
+      nodes,
+      edges: graph.edges.map((e) => ({ ...e })),
+      adj: graph.adj.map((list) => [...list]),
+    };
+    next.adj.push([]);
+    const nearest = graph.nodes
+      .map((n) => ({ id: n.id, dist: Math.hypot(n.x - x, n.y - y) }))
+      .sort((a, b) => a.dist - b.dist)
+      .slice(0, 2);
+    for (const target of nearest) {
+      addEdge(next, id, target.id, random);
+    }
+    return { graph: next, node: next.nodes[id] };
+  }
   const next = mode === 'delaunay' ? buildDelaunayGraph(nodes, random) : buildCompleteGraph(nodes, random);
   return { graph: next, node: next.nodes[id] };
 }
@@ -322,4 +418,23 @@ export function toggleEdgeCapacityNear(
   }
   edge.congestion = 0;
   return idx;
+}
+
+/** Return cell IDs whose explicit cell edges have all been severed offline. */
+export function getOfflineCellIds(graph: Graph): Set<string> {
+  const counts = new Map<string, { total: number; severed: number }>();
+  for (const edge of graph.edges) {
+    if (!edge.cellId) continue;
+    const entry = counts.get(edge.cellId) ?? { total: 0, severed: 0 };
+    entry.total++;
+    if (edge.severed) entry.severed++;
+    counts.set(edge.cellId, entry);
+  }
+  const offline = new Set<string>();
+  for (const [cellId, entry] of counts.entries()) {
+    if (entry.total > 0 && entry.severed === entry.total) {
+      offline.add(cellId);
+    }
+  }
+  return offline;
 }

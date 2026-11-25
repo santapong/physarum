@@ -1,4 +1,4 @@
-import type { DynamicsMode, FlowMode, GraphMode, LabDomain, Node } from './graph';
+import type { DynamicsMode, ExplicitEdgeSpec, FlowMode, GraphMode, LabDomain, Node } from './graph';
 
 export interface EdgeCapacitySpec {
   i: number;
@@ -20,10 +20,300 @@ export interface Preset {
   nodes: Node[];
   terrainPolygons?: Array<Array<[number, number]>>;
   capacities?: EdgeCapacitySpec[];
+  explicitEdges?: ExplicitEdgeSpec[];
 }
 
 const node = (id: number, x: number, y: number, flow = 0, label?: string): Node =>
   label ? { id, x, y, flow, label } : { id, x, y, flow };
+
+function buildJewelryFactoryLayout(options: {
+  cast18kCap: number;
+  paveCap: number;
+  polishACap: number;
+}): { nodes: Node[]; explicitEdges: ExplicitEdgeSpec[] } {
+  const nodes: Node[] = [
+    node(0, 45, 300, 1, 'Intake'),
+    // Stage 1: Wax
+    node(1, 105, 195),
+    node(2, 155, 195),
+    node(3, 105, 405),
+    node(4, 155, 405),
+    // Stage 2: Casting
+    node(5, 225, 145),
+    node(6, 280, 145),
+    node(7, 225, 300),
+    node(8, 280, 300),
+    node(9, 225, 455),
+    node(10, 280, 455),
+    // Stage 3: Filing
+    node(11, 345, 195),
+    node(12, 400, 195),
+    node(13, 345, 405),
+    node(14, 400, 405),
+    // Stage 4: Setting
+    node(15, 465, 195),
+    node(16, 520, 195),
+    node(17, 465, 405),
+    node(18, 520, 405),
+    // Stage 5: Polish
+    node(19, 585, 195),
+    node(20, 640, 195),
+    node(21, 585, 405),
+    node(22, 640, 405),
+    // Stage 6: Plating
+    node(23, 705, 195),
+    node(24, 755, 195),
+    node(25, 705, 405),
+    node(26, 755, 405),
+    // Stage 7: QC
+    node(27, 810, 300),
+    node(28, 860, 300, -1, 'QC Pass'),
+  ];
+
+  const explicitEdges: ExplicitEdgeSpec[] = [
+    // Intake -> Wax
+    { i: 0, j: 1, costFactor: 1.0 },
+    { i: 0, j: 3, costFactor: 1.0 },
+    // Wax cells
+    { i: 1, j: 2, costFactor: 1.0, capacity: 0.55, cellId: 'wax-1', stage: 'Wax' },
+    { i: 3, j: 4, costFactor: 1.05, capacity: 0.55, cellId: 'wax-2', stage: 'Wax' },
+    // Wax -> Casting
+    { i: 2, j: 5, costFactor: 1.0 },
+    { i: 2, j: 7, costFactor: 1.15 },
+    { i: 2, j: 9, costFactor: 1.3 },
+    { i: 4, j: 5, costFactor: 1.3 },
+    { i: 4, j: 7, costFactor: 1.15 },
+    { i: 4, j: 9, costFactor: 1.0 },
+    // Casting cells
+    { i: 5, j: 6, costFactor: 1.0, capacity: options.cast18kCap, cellId: 'cast-18k', stage: 'Casting' },
+    { i: 7, j: 8, costFactor: 1.12, capacity: 0.45, cellId: 'cast-flex', stage: 'Casting' },
+    { i: 9, j: 10, costFactor: 1.0, capacity: 0.4, cellId: 'cast-925', stage: 'Casting' },
+    // Casting -> Filing
+    { i: 6, j: 11, costFactor: 1.0 },
+    { i: 6, j: 13, costFactor: 1.25 },
+    { i: 8, j: 11, costFactor: 1.1 },
+    { i: 8, j: 13, costFactor: 1.1 },
+    { i: 10, j: 11, costFactor: 1.25 },
+    { i: 10, j: 13, costFactor: 1.0 },
+    // Filing cells
+    { i: 11, j: 12, costFactor: 1.0, capacity: 0.55, cellId: 'file-1', stage: 'Filing' },
+    { i: 13, j: 14, costFactor: 1.05, capacity: 0.55, cellId: 'file-2', stage: 'Filing' },
+    // Filing -> Setting
+    { i: 12, j: 15, costFactor: 1.0 },
+    { i: 12, j: 17, costFactor: 1.25 },
+    { i: 14, j: 15, costFactor: 1.25 },
+    { i: 14, j: 17, costFactor: 1.0 },
+    // Setting cells
+    { i: 15, j: 16, costFactor: 1.0, capacity: options.paveCap, cellId: 'set-pave', stage: 'Setting' },
+    { i: 17, j: 18, costFactor: 1.2, capacity: 0.65, cellId: 'set-prong', stage: 'Setting' },
+    // Setting -> Polish
+    { i: 16, j: 19, costFactor: 1.0 },
+    { i: 16, j: 21, costFactor: 1.25 },
+    { i: 18, j: 19, costFactor: 1.25 },
+    { i: 18, j: 21, costFactor: 1.0 },
+    // Polish cells
+    { i: 19, j: 20, costFactor: 1.0, capacity: options.polishACap, cellId: 'polish-a', stage: 'Polish' },
+    { i: 21, j: 22, costFactor: 1.1, capacity: 0.55, cellId: 'polish-b', stage: 'Polish' },
+    // Polish -> Plating
+    { i: 20, j: 23, costFactor: 1.0 },
+    { i: 20, j: 25, costFactor: 1.25 },
+    { i: 22, j: 23, costFactor: 1.25 },
+    { i: 22, j: 25, costFactor: 1.0 },
+    // Plating cells
+    { i: 23, j: 24, costFactor: 1.0, capacity: 0.55, cellId: 'plate-1', stage: 'Plating' },
+    { i: 25, j: 26, costFactor: 1.05, capacity: 0.55, cellId: 'plate-2', stage: 'Plating' },
+    // Plating -> QC
+    { i: 24, j: 27, costFactor: 1.0 },
+    { i: 26, j: 27, costFactor: 1.0 },
+    // QC cell
+    { i: 27, j: 28, costFactor: 1.0, capacity: 1.05, cellId: 'qc-1', stage: 'QC' },
+  ];
+
+  return { nodes, explicitEdges };
+}
+
+const JEWELRY_ATELIER_LAYOUT = buildJewelryFactoryLayout({
+  cast18kCap: 0.4,
+  paveCap: 0.42,
+  polishACap: 0.52,
+});
+
+const JEWELRY_RUSH_LAYOUT = buildJewelryFactoryLayout({
+  cast18kCap: 0.36,
+  paveCap: 0.38,
+  polishACap: 0.46,
+});
+
+function buildFgSgFactoryLayout(): { nodes: Node[]; explicitEdges: ExplicitEdgeSpec[] } {
+  const base = buildJewelryFactoryLayout({
+    cast18kCap: 0.38,
+    paveCap: 0.38,
+    polishACap: 0.48,
+  });
+  const nodes = base.nodes.map((n) => ({ ...n }));
+  nodes[0].flow = 0.75;
+  nodes[0].label = 'Wax Intake';
+  nodes[28].flow = -0.75;
+  nodes[28].label = 'FG QC';
+  nodes.push(
+    node(29, 432, 95, 0.25, 'SG Stock'),
+    node(30, 432, 505, -0.25, 'SG Store'),
+  );
+
+  const explicitEdges: ExplicitEdgeSpec[] = [
+    ...base.explicitEdges,
+    // SG-STOCK replenishment output after Filing
+    { i: 12, j: 30, costFactor: 1.05 },
+    { i: 14, j: 30, costFactor: 1.0 },
+    // On-hand SG inventory entering Setting or Polish
+    { i: 29, j: 15, costFactor: 1.0 },
+    { i: 29, j: 17, costFactor: 1.15 },
+    { i: 29, j: 19, costFactor: 1.25 },
+    // Plain-band bypass (Filing -> Polish, skipping Setting)
+    { i: 12, j: 19, costFactor: 1.45 },
+    { i: 14, j: 21, costFactor: 1.45 },
+    // Unplated-model bypass (Polish -> QC, skipping Plating)
+    { i: 20, j: 27, costFactor: 1.45 },
+    { i: 22, j: 27, costFactor: 1.45 },
+  ];
+
+  return { nodes, explicitEdges };
+}
+
+const JEWELRY_100PO_LAYOUT = buildFgSgFactoryLayout();
+
+function buildErpFactoryLayout(): { nodes: Node[]; explicitEdges: ExplicitEdgeSpec[] } {
+  const nodes: Node[] = [
+    node(0, 36, 300, 0.8, 'Raw Intake'),
+    // Stage 1: Wax (1..4)
+    node(1, 88, 195),
+    node(2, 128, 195),
+    node(3, 88, 405),
+    node(4, 128, 405),
+    // Stage 2: Casting (5..10)
+    node(5, 178, 145),
+    node(6, 220, 145),
+    node(7, 178, 300),
+    node(8, 220, 300),
+    node(9, 178, 455),
+    node(10, 220, 455),
+    // Stage 3: Filing (11..14)
+    node(11, 268, 195),
+    node(12, 308, 195),
+    node(13, 268, 405),
+    node(14, 308, 405),
+    // Stage 4: Warehouse SG Hub (15..16)
+    node(15, 358, 300, 0, 'WH In'),
+    node(16, 404, 300, 0, 'WH Out'),
+    // Stage 5: Assembly (17..20)
+    node(17, 452, 195),
+    node(18, 492, 195),
+    node(19, 452, 405),
+    node(20, 492, 405),
+    // Stage 6: Setting (21..24)
+    node(21, 540, 195),
+    node(22, 582, 195),
+    node(23, 540, 405),
+    node(24, 582, 405),
+    // Stage 7: Polish (25..28)
+    node(25, 630, 195),
+    node(26, 672, 195),
+    node(27, 630, 405),
+    node(28, 672, 405),
+    // Stage 8: Plating (29..32)
+    node(29, 720, 195),
+    node(30, 758, 195),
+    node(31, 720, 405),
+    node(32, 758, 405),
+    // Warehouse Stock/Buffer Terminals (33..34)
+    node(33, 358, 98, 0.2, 'SG Stock'),
+    node(34, 404, 502, -0.2, 'SG Buffer'),
+    // Stage 9: QC & Ship (35..36)
+    node(35, 808, 300),
+    node(36, 862, 300, -0.8, 'FG Ship'),
+  ];
+
+  const explicitEdges: ExplicitEdgeSpec[] = [
+    // Intake -> Wax
+    { i: 0, j: 1, costFactor: 1.0 },
+    { i: 0, j: 3, costFactor: 1.0 },
+    // Wax cells
+    { i: 1, j: 2, costFactor: 1.0, capacity: 0.5, cellId: 'wax-1', stage: 'Wax' },
+    { i: 3, j: 4, costFactor: 1.05, capacity: 0.5, cellId: 'wax-2', stage: 'Wax' },
+    // Wax -> Casting
+    { i: 2, j: 5, costFactor: 1.0 },
+    { i: 2, j: 7, costFactor: 1.15 },
+    { i: 2, j: 9, costFactor: 1.3 },
+    { i: 4, j: 5, costFactor: 1.3 },
+    { i: 4, j: 7, costFactor: 1.15 },
+    { i: 4, j: 9, costFactor: 1.0 },
+    // Casting cells
+    { i: 5, j: 6, costFactor: 1.0, capacity: 0.34, cellId: 'cast-18k', stage: 'Casting' },
+    { i: 7, j: 8, costFactor: 1.12, capacity: 0.42, cellId: 'cast-flex', stage: 'Casting' },
+    { i: 9, j: 10, costFactor: 1.0, capacity: 0.38, cellId: 'cast-925', stage: 'Casting' },
+    // Casting -> Filing
+    { i: 6, j: 11, costFactor: 1.0 },
+    { i: 6, j: 13, costFactor: 1.25 },
+    { i: 8, j: 11, costFactor: 1.1 },
+    { i: 8, j: 13, costFactor: 1.1 },
+    { i: 10, j: 11, costFactor: 1.25 },
+    { i: 10, j: 13, costFactor: 1.0 },
+    // Filing cells
+    { i: 11, j: 12, costFactor: 1.0, capacity: 0.5, cellId: 'file-1', stage: 'Filing' },
+    { i: 13, j: 14, costFactor: 1.05, capacity: 0.5, cellId: 'file-2', stage: 'Filing' },
+    // Filing -> Warehouse SG Hub (and SG Stock/Buffer terminals)
+    { i: 12, j: 15, costFactor: 1.0 },
+    { i: 14, j: 15, costFactor: 1.0 },
+    { i: 33, j: 15, costFactor: 1.05 },
+    { i: 15, j: 16, costFactor: 1.0, capacity: 0.62, cellId: 'wh-io', stage: 'Warehouse' },
+    { i: 16, j: 34, costFactor: 1.05 },
+    // Warehouse -> Assembly (+ FG-FULL Filing -> Assembly bypass)
+    { i: 16, j: 17, costFactor: 1.0 },
+    { i: 16, j: 19, costFactor: 1.05 },
+    { i: 12, j: 17, costFactor: 1.35 },
+    { i: 14, j: 19, costFactor: 1.35 },
+    // Assembly cells
+    { i: 17, j: 18, costFactor: 1.0, capacity: 0.44, cellId: 'asm-1', stage: 'Assembly' },
+    { i: 19, j: 20, costFactor: 1.05, capacity: 0.48, cellId: 'asm-2', stage: 'Assembly' },
+    // Assembly -> Setting
+    { i: 18, j: 21, costFactor: 1.0 },
+    { i: 18, j: 23, costFactor: 1.25 },
+    { i: 20, j: 21, costFactor: 1.25 },
+    { i: 20, j: 23, costFactor: 1.0 },
+    // Setting cells
+    { i: 21, j: 22, costFactor: 1.0, capacity: 0.36, cellId: 'set-pave', stage: 'Setting' },
+    { i: 23, j: 24, costFactor: 1.2, capacity: 0.56, cellId: 'set-prong', stage: 'Setting' },
+    // Setting -> Polish (+ Plain-Band Assembly -> Polish bypass)
+    { i: 22, j: 25, costFactor: 1.0 },
+    { i: 22, j: 27, costFactor: 1.25 },
+    { i: 24, j: 25, costFactor: 1.25 },
+    { i: 24, j: 27, costFactor: 1.0 },
+    { i: 18, j: 25, costFactor: 1.45 },
+    { i: 20, j: 27, costFactor: 1.45 },
+    // Polish cells
+    { i: 25, j: 26, costFactor: 1.0, capacity: 0.45, cellId: 'polish-a', stage: 'Polish' },
+    { i: 27, j: 28, costFactor: 1.1, capacity: 0.52, cellId: 'polish-b', stage: 'Polish' },
+    // Polish -> Plating
+    { i: 26, j: 29, costFactor: 1.0 },
+    { i: 26, j: 31, costFactor: 1.25 },
+    { i: 28, j: 29, costFactor: 1.25 },
+    { i: 28, j: 31, costFactor: 1.0 },
+    // Plating cells
+    { i: 29, j: 30, costFactor: 1.0, capacity: 0.5, cellId: 'plate-1', stage: 'Plating' },
+    { i: 31, j: 32, costFactor: 1.05, capacity: 0.5, cellId: 'plate-2', stage: 'Plating' },
+    // Plating -> QC (+ Unplated Polish -> QC bypass)
+    { i: 30, j: 35, costFactor: 1.0 },
+    { i: 32, j: 35, costFactor: 1.0 },
+    { i: 26, j: 35, costFactor: 1.45 },
+    { i: 28, j: 35, costFactor: 1.45 },
+    // QC cell
+    { i: 35, j: 36, costFactor: 1.0, capacity: 0.9, cellId: 'qc-1', stage: 'QC' },
+  ];
+
+  return { nodes, explicitEdges };
+}
+
+const JEWELRY_ERP_LAYOUT = buildErpFactoryLayout();
 
 export const PRESETS: Preset[] = [
   {
@@ -425,6 +715,58 @@ export const PRESETS: Preset[] = [
         [375, 270],
       ],
     ],
+  },
+  {
+    id: 'fjsp-jewelry-atelier',
+    name: 'Jewelry Atelier · 7-Stage Multi-Cell',
+    description: 'Two-level multi-cell jewelry workflow: Upper Physarum flow + Lower non-overlapping FJSP Gantt.',
+    domain: 'fjsp',
+    mode: 'explicit',
+    flowMode: 'source-sink',
+    dynamicsMode: 'linear-lp',
+    mu: 1.0,
+    seed: 5101,
+    nodes: JEWELRY_ATELIER_LAYOUT.nodes,
+    explicitEdges: JEWELRY_ATELIER_LAYOUT.explicitEdges,
+  },
+  {
+    id: 'fjsp-jewelry-rush',
+    name: 'Bridal Pavé Rush · High-Bottleneck',
+    description: '12-order bridal pavé batch stressing tight Micro-Pavé and 18K kiln capacities.',
+    domain: 'fjsp',
+    mode: 'explicit',
+    flowMode: 'source-sink',
+    dynamicsMode: 'linear-lp',
+    mu: 1.0,
+    seed: 5102,
+    nodes: JEWELRY_RUSH_LAYOUT.nodes,
+    explicitEdges: JEWELRY_RUSH_LAYOUT.explicitEdges,
+  },
+  {
+    id: 'fjsp-jewelry-100po',
+    name: '100-PO Factory · FG + SG Multi-Model',
+    description: '100 heterogeneous POs (40 FG-Full, 35 FG-from-SG, 25 SG-Stock) with BOM links & due dates.',
+    domain: 'fjsp',
+    mode: 'explicit',
+    flowMode: 'source-sink',
+    dynamicsMode: 'linear-lp',
+    mu: 1.0,
+    seed: 5103,
+    nodes: JEWELRY_100PO_LAYOUT.nodes,
+    explicitEdges: JEWELRY_100PO_LAYOUT.explicitEdges,
+  },
+  {
+    id: 'fjsp-jewelry-erp',
+    name: 'ERP Master Scheduler · SO→PO + MRP + Cash Flow',
+    description: '20 SOs / 80 POs with 560m/day shifts, SG→Warehouse→Assembly→FG round-trip, MRP gating, and daily Cash Flow.',
+    domain: 'fjsp',
+    mode: 'explicit',
+    flowMode: 'source-sink',
+    dynamicsMode: 'linear-lp',
+    mu: 1.0,
+    seed: 5104,
+    nodes: JEWELRY_ERP_LAYOUT.nodes,
+    explicitEdges: JEWELRY_ERP_LAYOUT.explicitEdges,
   },
 ];
 

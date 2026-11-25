@@ -59,6 +59,26 @@ describe('share state', () => {
     expect(decodeState(encodeState(stateV3))).toEqual(stateV3);
   });
 
+  it('round-trips a valid v3 fjsp explicit factory scenario with presetId', () => {
+    const stateFjsp: SharedState = {
+      version: 3,
+      domain: 'fjsp',
+      dynamicsMode: 'linear-lp',
+      nodes: [
+        { id: 0, x: 45, y: 300, flow: 1, label: 'Intake' },
+        { id: 1, x: 860, y: 300, flow: -1, label: 'QC Pass' },
+      ],
+      mode: 'explicit',
+      flowMode: 'source-sink',
+      mu: 1.0,
+      dt: 0.05,
+      speed: 8,
+      seed: 5101,
+      presetId: 'fjsp-jewelry-atelier',
+    };
+    expect(decodeState(encodeState(stateFjsp))).toEqual(stateFjsp);
+  });
+
   it('sanitizes malformed v3 fields cleanly without throwing', () => {
     const cleaned = sanitizeState({
       ...stateV3,

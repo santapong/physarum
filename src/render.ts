@@ -1,4 +1,6 @@
+import type { AlloyType, CellSpec, FjspSolution } from './fjsp';
 import type { FlowMode, Graph, LabDomain } from './graph';
+import type { ErpComparison } from './mrp';
 import { effectiveEdgeCost } from './solver';
 import type { TerrainField } from './terrain';
 
@@ -133,6 +135,36 @@ export function render(ctx: CanvasRenderingContext2D, graph: Graph, options: Ren
 
   // 3. Physarum tubes + severed markers
   const domain = options.domain ?? 'transport';
+  if (domain === 'fjsp') {
+    const stages = [
+      { label: 'Wax', x: 130 },
+      { label: 'Casting', x: 252.5 },
+      { label: 'Filing', x: 372.5 },
+      { label: 'Setting', x: 492.5 },
+      { label: 'Polish', x: 612.5 },
+      { label: 'Plating', x: 730 },
+      { label: 'QC', x: 835 },
+    ];
+    ctx.save();
+    ctx.font = '600 11px Inter, ui-sans-serif, system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.strokeStyle = 'rgba(15, 23, 42, 0.08)';
+    ctx.lineWidth = 1;
+    for (let s = 0; s < stages.length; s++) {
+      ctx.fillStyle = '#334155';
+      ctx.fillText(stages[s].label.toUpperCase(), stages[s].x, 24);
+      if (s > 0) {
+        const divX = (stages[s - 1].x + stages[s].x) / 2;
+        ctx.beginPath();
+        ctx.moveTo(divX, 38);
+        ctx.lineTo(divX, h - 20);
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
+  }
+
   ctx.save();
   ctx.lineCap = 'round';
   for (let idx = 0; idx < graph.edges.length; idx++) {
@@ -143,7 +175,7 @@ export function render(ctx: CanvasRenderingContext2D, graph: Graph, options: Ren
     if (edge.severed) {
       ctx.save();
       ctx.strokeStyle = 'rgba(239, 68, 68, 0.55)';
-      ctx.lineWidth = 1.6;
+      ctx.lineWidth = edge.cellId ? 2.4 : 1.6;
       ctx.setLineDash([4, 4]);
       ctx.beginPath();
       ctx.moveTo(a.x, a.y);
@@ -161,12 +193,19 @@ export function render(ctx: CanvasRenderingContext2D, graph: Graph, options: Ren
       ctx.moveTo(mx + 4, my - 4);
       ctx.lineTo(mx - 4, my + 4);
       ctx.stroke();
+      if (domain === 'fjsp' && edge.cellId) {
+        ctx.font = '700 10px ui-monospace, SFMono-Regular, Menlo, monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'bottom';
+        ctx.fillStyle = '#b91c1c';
+        ctx.fillText(`${edge.cellId} (OFF)`, mx, my - 10);
+      }
       ctx.restore();
       continue;
     }
 
     const d = clamp01(edge.D);
-    if (d <= 0.003 && idx !== options.hoveredEdgeIndex) continue;
+    if (d <= 0.003 && idx !== options.hoveredEdgeIndex && !edge.cellId) continue;
 
     let strokeWidth = lerp(0.6, 8.5, d);
     let alpha = Math.max(0.04, d);
@@ -197,6 +236,25 @@ export function render(ctx: CanvasRenderingContext2D, graph: Graph, options: Ren
       } else {
         strokeStyle = d > 0.5 ? '#0f766e' : '#0284c7';
       }
+    } else if (domain === 'fjsp') {
+      if (edge.cellId) {
+        const lam = edge.congestion ?? 0;
+        strokeWidth = lerp(9, 15, d);
+        alpha = Math.max(0.48, d);
+        if (idx === options.hoveredEdgeIndex) {
+          strokeStyle = '#15803d';
+        } else if (lam > 0.35) {
+          strokeStyle = '#dc2626';
+        } else if (lam > 0.05) {
+          strokeStyle = '#d97706';
+        } else {
+          strokeStyle = d > 0.3 ? '#0f766e' : '#0284c7';
+        }
+      } else {
+        strokeWidth = lerp(0.8, 4.4, d);
+        alpha = d >= 0.01 ? Math.max(0.18, d * 0.85) : 0.06;
+        strokeStyle = idx === options.hoveredEdgeIndex ? '#15803d' : '#475569';
+      }
     }
 
     if (idx === options.hoveredEdgeIndex) {
@@ -217,6 +275,22 @@ export function render(ctx: CanvasRenderingContext2D, graph: Graph, options: Ren
     ctx.moveTo(a.x, a.y);
     ctx.lineTo(b.x, b.y);
     ctx.stroke();
+
+    if (domain === 'fjsp' && edge.cellId) {
+      ctx.save();
+      ctx.globalAlpha = 1;
+      const mx = (a.x + b.x) / 2;
+      const my = (a.y + b.y) / 2;
+      ctx.font = '700 10px ui-monospace, SFMono-Regular, Menlo, monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'bottom';
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = 'rgba(243, 242, 232, 0.94)';
+      ctx.strokeText(edge.cellId, mx, my - 11);
+      ctx.fillStyle = (edge.congestion ?? 0) > 0.05 ? '#b45309' : '#0f172a';
+      ctx.fillText(edge.cellId, mx, my - 11);
+      ctx.restore();
+    }
   }
   ctx.restore();
 
@@ -240,7 +314,12 @@ export function render(ctx: CanvasRenderingContext2D, graph: Graph, options: Ren
         const t = (phase + k / count) % 1;
         const px = lerp(sx, ex, t);
         const py = lerp(sy, ey, t);
-        ctx.fillStyle = domain === 'vascular' ? '#fecaca' : domain === 'optimization' ? '#5eead4' : '#a3e66f';
+        ctx.fillStyle =
+          domain === 'vascular'
+            ? '#fecaca'
+            : domain === 'optimization' || domain === 'fjsp'
+              ? '#5eead4'
+              : '#a3e66f';
         ctx.strokeStyle = '#141812';
         ctx.lineWidth = 1;
         ctx.beginPath();
@@ -454,4 +533,420 @@ export function renderCrossbarMatrix(ctx: CanvasRenderingContext2D, graph: Graph
       ctx.stroke();
     }
   }
+}
+
+const ALLOY_COLORS: Record<AlloyType, string> = {
+  '18K-Y': '#eab308',
+  '18K-R': '#f43f5e',
+  '925': '#94a3b8',
+  PT950: '#38bdf8',
+};
+
+/**
+ * Render the Lower-Layer Multi-Cell Jewelry FJSP Gantt chart across all physical cells,
+ * highlighting setup changeovers, re-entrant polishing, offline cells, and bottleneck lambda.
+ */
+export function renderGanttChart(
+  ctx: CanvasRenderingContext2D,
+  solution: FjspSolution,
+  cells: CellSpec[],
+  offlineCells: string[],
+  bottleneckCellId: string,
+  labelTag: string,
+  lowerBoundMin = 0,
+  options?: { shiftMinPerDay?: number; extraSummary?: string },
+): void {
+  const w = ctx.canvas.width;
+  const h = ctx.canvas.height;
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = '#0b1014';
+  ctx.fillRect(0, 0, w, h);
+
+  const shiftMinPerDay = options?.shiftMinPerDay ?? solution.shiftMinPerDay ?? 0;
+  const offlineSet = new Set(offlineCells);
+  const leftPad = 108;
+  const rightPad = 18;
+  const topPad = 28;
+  const bottomPad = 24;
+  const plotW = Math.max(100, w - leftPad - rightPad);
+  const plotH = Math.max(60, h - topPad - bottomPad);
+  const rowH = plotH / Math.max(1, cells.length);
+
+  ctx.save();
+  ctx.font = '600 11px Inter, ui-sans-serif, system-ui, sans-serif';
+  ctx.textBaseline = 'middle';
+  ctx.textAlign = 'left';
+  ctx.fillStyle = '#d8f8bd';
+  const multiPoSummary =
+    solution.totalPos >= 20
+      ? ` · On-Time ${solution.onTimePos}/${solution.totalPos} POs · Tard ${solution.totalTardinessMin}m`
+      : '';
+  const makespanStr =
+    shiftMinPerDay > 0
+      ? `${(solution.makespanMin / shiftMinPerDay).toFixed(1)}d (${solution.makespanMin}m)`
+      : `${solution.makespanMin}m`;
+  const lbStr = lowerBoundMin > 0 ? ` · LB ${lowerBoundMin}m` : '';
+  const extraStr = options?.extraSummary ?? '';
+  const summaryText = solution.feasible
+    ? `${labelTag} · Makespan ${makespanStr} · Setup ${solution.totalSetupMin}m${lbStr}${multiPoSummary}${extraStr}`
+    : `${labelTag} · Infeasible`;
+  ctx.fillText(summaryText, leftPad, 14);
+
+  const cellIndex = new Map<string, number>();
+  for (let r = 0; r < cells.length; r++) {
+    const cell = cells[r];
+    cellIndex.set(cell.id, r);
+    const y0 = topPad + r * rowH;
+    ctx.fillStyle = r % 2 === 0 ? '#10161c' : '#0b1014';
+    ctx.fillRect(leftPad, y0, plotW, rowH);
+
+    const isOff = offlineSet.has(cell.id);
+    const isBottleneck = cell.id === bottleneckCellId && !isOff;
+    ctx.font = '600 10px ui-monospace, SFMono-Regular, Menlo, monospace';
+    ctx.textAlign = 'right';
+    ctx.fillStyle = isOff
+      ? '#f87171'
+      : isBottleneck
+        ? '#fbbf24'
+        : cell.stage === 'Warehouse'
+          ? '#38bdf8'
+          : cell.stage === 'Assembly'
+            ? '#c084fc'
+            : '#cbd5cb';
+    const prefix = isOff ? 'OFF ' : isBottleneck ? 'λ ' : '';
+    ctx.fillText(`${prefix}${cell.id}`, leftPad - 8, y0 + rowH / 2);
+  }
+
+  if (!solution.feasible) {
+    ctx.fillStyle = 'rgba(127, 29, 29, 0.28)';
+    ctx.strokeStyle = '#ef4444';
+    ctx.lineWidth = 1.5;
+    const boxW = Math.min(plotW - 40, 520);
+    const boxH = 72;
+    const bx = leftPad + (plotW - boxW) / 2;
+    const by = topPad + (plotH - boxH) / 2;
+    ctx.beginPath();
+    ctx.roundRect(bx, by, boxW, boxH, 8);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#fecaca';
+    ctx.font = '700 12px Inter, ui-sans-serif, system-ui, sans-serif';
+    ctx.fillText('Lower-Layer Schedule Infeasible', bx + boxW / 2, by + 24);
+    ctx.font = '11px Inter, ui-sans-serif, system-ui, sans-serif';
+    ctx.fillStyle = '#fca5a5';
+    ctx.fillText(solution.infeasibleReason ?? 'Missing required machine capacity', bx + boxW / 2, by + 48);
+    ctx.restore();
+    return;
+  }
+
+  const maxTime = Math.max(solution.makespanMin, lowerBoundMin, 60) * 1.06;
+  const xForTime = (t: number): number => leftPad + (t / maxTime) * plotW;
+
+  if (shiftMinPerDay > 0) {
+    const totalDays = Math.ceil(maxTime / shiftMinPerDay);
+    for (let d = 0; d < totalDays; d++) {
+      const dx0 = xForTime(d * shiftMinPerDay);
+      const dx1 = xForTime(Math.min(maxTime, (d + 1) * shiftMinPerDay));
+      if (d % 2 === 1) {
+        ctx.fillStyle = 'rgba(148, 163, 184, 0.045)';
+        ctx.fillRect(dx0, topPad, Math.max(0, dx1 - dx0), plotH);
+      }
+      ctx.strokeStyle = 'rgba(163, 230, 111, 0.24)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(dx0, topPad);
+      ctx.lineTo(dx0, topPad + plotH);
+      ctx.stroke();
+
+      if (dx1 - dx0 >= 22) {
+        ctx.font = '600 10px ui-monospace, SFMono-Regular, Menlo, monospace';
+        ctx.textAlign = 'left';
+        ctx.fillStyle = '#9aa89e';
+        ctx.fillText(`D${d + 1}`, dx0 + 4, h - 10);
+      }
+    }
+    ctx.font = '10px ui-monospace, SFMono-Regular, Menlo, monospace';
+    ctx.textAlign = 'right';
+    ctx.fillStyle = '#6f7b72';
+    ctx.fillText(`${shiftMinPerDay}m/d`, leftPad + plotW, h - 10);
+  } else {
+    const tickStep = maxTime > 500 ? 100 : 50;
+    ctx.strokeStyle = 'rgba(148, 163, 184, 0.14)';
+    ctx.lineWidth = 1;
+    ctx.font = '10px ui-monospace, SFMono-Regular, Menlo, monospace';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#8e9790';
+    for (let t = 0; t <= maxTime; t += tickStep) {
+      const x = xForTime(t);
+      ctx.beginPath();
+      ctx.moveTo(x, topPad);
+      ctx.lineTo(x, topPad + plotH);
+      ctx.stroke();
+      ctx.fillText(`${t}m`, x, h - 10);
+    }
+  }
+
+  if (lowerBoundMin > 0) {
+    const xLb = xForTime(lowerBoundMin);
+    ctx.save();
+    ctx.strokeStyle = 'rgba(167, 139, 250, 0.78)';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    ctx.moveTo(xLb, topPad);
+    ctx.lineTo(xLb, topPad + plotH);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  const lateSet = new Set(solution.lateJobIds);
+  for (const op of solution.ops) {
+    const r = cellIndex.get(op.cellId);
+    if (r === undefined) continue;
+    const y0 = topPad + r * rowH + 2;
+    const bh = Math.max(6, rowH - 4);
+
+    if (op.setupMin > 0) {
+      const sx0 = xForTime(op.startMin - op.setupMin);
+      const sx1 = xForTime(op.startMin);
+      ctx.fillStyle = 'rgba(217, 119, 6, 0.42)';
+      ctx.strokeStyle = '#f59e0b';
+      ctx.lineWidth = 1;
+      ctx.fillRect(sx0, y0 + 2, Math.max(2, sx1 - sx0), Math.max(4, bh - 4));
+      ctx.strokeRect(sx0, y0 + 2, Math.max(2, sx1 - sx0), Math.max(4, bh - 4));
+    }
+
+    const x0 = xForTime(op.startMin);
+    const x1 = xForTime(op.endMin);
+    const bw = Math.max(2, x1 - x0);
+    ctx.fillStyle = ALLOY_COLORS[op.alloy] ?? '#a3e66f';
+    ctx.strokeStyle = '#090d10';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.roundRect(x0, y0, bw, bh, 3);
+    ctx.fill();
+    ctx.stroke();
+
+    if (lateSet.has(op.jobId)) {
+      ctx.fillStyle = '#ef4444';
+      ctx.fillRect(x0, y0, bw, 2);
+    }
+
+    if (bw >= 17) {
+      ctx.fillStyle = '#090d10';
+      ctx.font = '700 9.5px ui-monospace, SFMono-Regular, Menlo, monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(`${op.jobId}${op.reentrant ? '↻' : ''}`, x0 + bw / 2, y0 + bh / 2);
+    }
+  }
+
+  const xMax = xForTime(solution.makespanMin);
+  ctx.strokeStyle = '#a3e66f';
+  ctx.lineWidth = 1.8;
+  ctx.beginPath();
+  ctx.moveTo(xMax, topPad);
+  ctx.lineTo(xMax, topPad + plotH);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function formatUsdCompact(v: number): string {
+  const sign = v < 0 ? '-' : '';
+  const abs = Math.abs(v);
+  if (abs >= 1_000_000) return `${sign}$${(abs / 1_000_000).toFixed(2)}M`;
+  if (abs >= 1000) return `${sign}$${(abs / 1000).toFixed(abs >= 100_000 ? 0 : 1)}k`;
+  return `${sign}$${Math.round(abs)}`;
+}
+
+/**
+ * Render the daily working-capital Cash Flow chart comparing Two-Level Master Scheduling
+ * against Greedy Baseline (daily inflows/outflows + cumulative closing cash curve & trough).
+ */
+export function renderCashFlowChart(ctx: CanvasRenderingContext2D, erpCmp: ErpComparison): void {
+  const w = ctx.canvas.width;
+  const h = ctx.canvas.height;
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = '#0b1014';
+  ctx.fillRect(0, 0, w, h);
+
+  const leftPad = 68;
+  const rightPad = 24;
+  const topPad = 30;
+  const bottomPad = 24;
+  const plotW = Math.max(100, w - leftPad - rightPad);
+  const plotH = Math.max(60, h - topPad - bottomPad);
+
+  const two = erpCmp.twoLevel;
+  const gr = erpCmp.greedyBaseline;
+
+  ctx.save();
+  if (!two.feasible) {
+    ctx.fillStyle = 'rgba(127, 29, 29, 0.28)';
+    ctx.strokeStyle = '#ef4444';
+    ctx.lineWidth = 1.5;
+    const boxW = Math.min(plotW, 480);
+    const boxH = 64;
+    const bx = leftPad + (plotW - boxW) / 2;
+    const by = topPad + (plotH - boxH) / 2;
+    ctx.beginPath();
+    ctx.roundRect(bx, by, boxW, boxH, 8);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#fecaca';
+    ctx.font = '700 12px Inter, ui-sans-serif, system-ui, sans-serif';
+    ctx.fillText('Daily Cash Flow Unavailable (Infeasible Schedule)', bx + boxW / 2, by + 32);
+    ctx.restore();
+    return;
+  }
+
+  const cfTwo = two.cashFlow;
+  const cfGr = gr.cashFlow;
+  const numDays = Math.max(cfTwo.daily.length, cfGr.daily.length, 1);
+
+  const allCashValues = [
+    0,
+    cfTwo.startingCashUsd,
+    ...cfTwo.daily.map((r) => r.closingCashUsd),
+    ...(gr.feasible ? cfGr.daily.map((r) => r.closingCashUsd) : []),
+  ];
+  const minVal = Math.min(...allCashValues);
+  const maxVal = Math.max(...allCashValues, 1000) * 1.08;
+  const span = Math.max(1000, maxVal - minVal);
+  const yForCash = (v: number): number => topPad + plotH - ((v - minVal) / span) * plotH;
+
+  // Header summary
+  const deltaSign = erpCmp.endingCashDeltaUsd >= 0 ? '+' : '';
+  const grSummary = gr.feasible
+    ? ` vs Greedy End ${formatUsdCompact(cfGr.endingCashUsd)} (${deltaSign}${formatUsdCompact(erpCmp.endingCashDeltaUsd)})`
+    : '';
+  ctx.font = '600 11px Inter, ui-sans-serif, system-ui, sans-serif';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#d8f8bd';
+  ctx.fillText(
+    `Start ${formatUsdCompact(cfTwo.startingCashUsd)} · Two-Level Min ${formatUsdCompact(cfTwo.minCashUsd)} (D${cfTwo.minCashDay}) / End ${formatUsdCompact(cfTwo.endingCashUsd)}${grSummary}`,
+    leftPad,
+    14,
+  );
+
+  // Horizontal cash gridlines
+  ctx.font = '10px ui-monospace, SFMono-Regular, Menlo, monospace';
+  ctx.textAlign = 'right';
+  const gridSteps = 3;
+  for (let g = 0; g <= gridSteps; g++) {
+    const val = minVal + (span * g) / gridSteps;
+    const y = yForCash(val);
+    ctx.strokeStyle = 'rgba(148, 163, 184, 0.14)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(leftPad, y);
+    ctx.lineTo(leftPad + plotW, y);
+    ctx.stroke();
+    ctx.fillStyle = '#8e9790';
+    ctx.fillText(formatUsdCompact(val), leftPad - 8, y);
+  }
+
+  // Zero cash threshold line
+  const yZero = yForCash(0);
+  ctx.save();
+  ctx.strokeStyle = 'rgba(248, 113, 113, 0.52)';
+  ctx.setLineDash([4, 4]);
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  ctx.moveTo(leftPad, yZero);
+  ctx.lineTo(leftPad + plotW, yZero);
+  ctx.stroke();
+  ctx.restore();
+
+  const slotW = plotW / numDays;
+  const maxBarFlow = Math.max(
+    1000,
+    ...cfTwo.daily.map((r) =>
+      Math.max(
+        r.inflowDepositUsd + r.inflowBalanceUsd,
+        r.outflowMaterialUsd + r.outflowLaborUsd + r.outflowOverheadWipUsd,
+      ),
+    ),
+  );
+  const maxBarH = plotH * 0.48;
+
+  // Daily inflows / outflows bars + day ticks
+  for (let i = 0; i < cfTwo.daily.length; i++) {
+    const row = cfTwo.daily[i];
+    const xSlot = leftPad + i * slotW;
+    const dayIn = row.inflowDepositUsd + row.inflowBalanceUsd;
+    const dayOut = row.outflowMaterialUsd + row.outflowLaborUsd + row.outflowOverheadWipUsd;
+    const barW = Math.max(4, Math.min(18, slotW * 0.28));
+
+    if (dayIn > 0) {
+      const bh = (dayIn / maxBarFlow) * maxBarH;
+      ctx.fillStyle = 'rgba(16, 185, 129, 0.36)';
+      ctx.fillRect(xSlot + slotW * 0.5 - barW - 1, topPad + plotH - bh, barW, bh);
+    }
+    if (dayOut > 0) {
+      const bh = (dayOut / maxBarFlow) * maxBarH;
+      ctx.fillStyle = 'rgba(244, 63, 94, 0.36)';
+      ctx.fillRect(xSlot + slotW * 0.5 + 1, topPad + plotH - bh, barW, bh);
+    }
+
+    ctx.fillStyle = '#9aa89e';
+    ctx.font = '600 10px ui-monospace, SFMono-Regular, Menlo, monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(`D${row.day}`, xSlot + slotW * 0.5, h - 10);
+  }
+
+  // Greedy cumulative cash polyline (dashed slate)
+  if (gr.feasible && cfGr.daily.length > 0) {
+    ctx.save();
+    ctx.strokeStyle = '#94a3b8';
+    ctx.lineWidth = 1.8;
+    ctx.setLineDash([5, 4]);
+    ctx.beginPath();
+    ctx.moveTo(leftPad, yForCash(cfGr.startingCashUsd));
+    for (let i = 0; i < cfGr.daily.length; i++) {
+      ctx.lineTo(leftPad + (i + 0.5) * slotW, yForCash(cfGr.daily[i].closingCashUsd));
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // Two-Level cumulative cash polyline (solid lime)
+  if (cfTwo.daily.length > 0) {
+    ctx.strokeStyle = '#a3e66f';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.moveTo(leftPad, yForCash(cfTwo.startingCashUsd));
+    for (let i = 0; i < cfTwo.daily.length; i++) {
+      ctx.lineTo(leftPad + (i + 0.5) * slotW, yForCash(cfTwo.daily[i].closingCashUsd));
+    }
+    ctx.stroke();
+
+    for (let i = 0; i < cfTwo.daily.length; i++) {
+      const row = cfTwo.daily[i];
+      const px = leftPad + (i + 0.5) * slotW;
+      const py = yForCash(row.closingCashUsd);
+      const isTrough = row.day === cfTwo.minCashDay;
+      ctx.fillStyle = isTrough ? '#fbbf24' : '#a3e66f';
+      ctx.strokeStyle = '#0b1014';
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      ctx.arc(px, py, isTrough ? 4.5 : 3, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      if (isTrough) {
+        ctx.fillStyle = '#fbbf24';
+        ctx.font = '700 10px ui-monospace, SFMono-Regular, Menlo, monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText(`Min ${formatUsdCompact(row.closingCashUsd)}`, px, Math.max(topPad + 10, py - 11));
+      }
+    }
+  }
+
+  ctx.restore();
 }

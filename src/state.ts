@@ -32,6 +32,7 @@ export interface SharedStateV3 {
   dt: number;
   speed: number;
   seed: number;
+  presetId?: string;
   maxRadiusMm?: number;
   capacities?: Array<{ i: number; j: number; capacity: number }>;
 }
@@ -66,7 +67,8 @@ export function sanitizeState(candidate: unknown): SharedState | null {
     nodes.push(cleanNode);
   }
 
-  const mode: GraphMode = raw.mode === 'delaunay' ? 'delaunay' : 'complete';
+  const mode: GraphMode =
+    raw.mode === 'delaunay' ? 'delaunay' : raw.mode === 'explicit' ? 'explicit' : 'complete';
   const mu = clamp(Number(raw.mu) || 1.2, 0.5, 2);
   const dt = clamp(Number(raw.dt) || 0.05, 0.01, 0.2);
   const speed = Math.round(clamp(Number(raw.speed) || 8, 1, 24));
@@ -74,7 +76,9 @@ export function sanitizeState(candidate: unknown): SharedState | null {
 
   if (isV3) {
     const domain: LabDomain =
-      raw.domain === 'vascular' || raw.domain === 'optimization' ? raw.domain : 'transport';
+      raw.domain === 'vascular' || raw.domain === 'optimization' || raw.domain === 'fjsp'
+        ? raw.domain
+        : 'transport';
     const dynamicsMode: DynamicsMode =
       raw.dynamicsMode === 'murray' || raw.dynamicsMode === 'linear-lp'
         ? raw.dynamicsMode
@@ -92,6 +96,9 @@ export function sanitizeState(candidate: unknown): SharedState | null {
       speed,
       seed,
     };
+    if (typeof raw.presetId === 'string' && raw.presetId.trim().length > 0) {
+      stateV3.presetId = raw.presetId.trim().slice(0, 48);
+    }
     if (Number.isFinite(raw.maxRadiusMm)) {
       stateV3.maxRadiusMm = clamp(Number(raw.maxRadiusMm), 0.2, 5.0);
     }
