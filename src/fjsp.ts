@@ -1,5 +1,7 @@
 import { getOfflineCellIds, type Graph } from './graph';
+import { build300PoJewelryBatch } from './mixed-orders';
 import { createRandom } from './random';
+import { checkWaxMolds, drawWaxShots, scheduledMoldUsage, shotsForLot, type MoldDraw, type WaxMoldRun, type WaxMoldUsage } from './wax-molds';
 
 export type AlloyType = '18K-Y' | '18K-R' | '925' | 'PT950';
 export type PoKind = 'FG-FULL' | 'FG-FROM-SG' | 'SG-STOCK';
@@ -17,6 +19,7 @@ export interface JewelryOpSpec {
   stage: string;
   durations: Record<string, number>;
   reentrant?: boolean;
+  waxMold?: WaxMoldRun;
 }
 
 export interface JewelryJobSpec {
@@ -60,6 +63,7 @@ export interface ScheduledOp {
   setupMin: number;
   transferMin: number;
   reentrant: boolean;
+  moldDraws?: MoldDraw[];
 }
 
 export interface ScheduleVerification {
@@ -77,6 +81,7 @@ export interface ScheduleVerification {
 }
 
 export interface FjspSolution {
+  waxMolds?: WaxMoldUsage[];
   feasible: boolean;
   infeasibleReason?: string;
   shiftMinPerDay: number;
@@ -95,6 +100,7 @@ export interface FjspSolution {
 }
 
 export interface TwoLevelComparison {
+  waxMolds?: WaxMoldUsage[];
   upperSignals: Record<string, UpperCellSignal>;
   offlineCells: string[];
   bottleneckCellId: string;
@@ -151,6 +157,10 @@ export const JEWELRY_ERP_CELLS: CellSpec[] = [
 const CELLS_BY_ID = new Map<string, CellSpec>(JEWELRY_ERP_CELLS.map((cell) => [cell.id, cell]));
 
 export function getCellsForPreset(presetId: string): CellSpec[] {
+  if (presetId === 'fjsp-jewelry-300po' || presetId === 'fjsp-jewelry-300po-halo-spare') {
+    return JEWELRY_CELLS.map(cell => cell.stage === 'Wax'
+      ? { ...cell, label: cell.label.replace('Wax CAD', 'Wax injector') } : cell);
+  }
   return presetId === 'fjsp-jewelry-erp' ? JEWELRY_ERP_CELLS : JEWELRY_CELLS;
 }
 
@@ -483,12 +493,10 @@ function build100PoJewelryBatch(): JewelryJobSpec[] {
 }
 
 export function getJewelryJobsForPreset(presetId: string): JewelryJobSpec[] {
-  const source =
-    presetId === 'fjsp-jewelry-100po'
-      ? build100PoJewelryBatch()
-      : presetId === 'fjsp-jewelry-rush'
-        ? RUSH_JOBS
-        : ATELIER_JOBS;
+  if (presetId === 'fjsp-jewelry-300po-halo-spare') return build300PoJewelryBatch(true);
+  if (presetId === 'fjsp-jewelry-300po') return build300PoJewelryBatch();
+  if (presetId === 'fjsp-jewelry-100po') return build100PoJewelryBatch();
+  const source = presetId === 'fjsp-jewelry-rush' ? RUSH_JOBS : ATELIER_JOBS;
   return source.map((job) => ({
     ...job,
     ops: job.ops.map((op) => ({
@@ -573,6 +581,10 @@ export function verifyFjspSchedule(
   let shiftViolations = 0;
   let materialViolations = 0;
 
+  const moldUse = new Map<string, ScheduledOp[]>();
+  const moldCheck = checkWaxMolds(jobs);
+  if (moldCheck.error) errors.push(moldCheck.error);
+
   for (const op of ops) {
     const key = `${op.jobId}#${op.opIndex}`;
     if (scheduledByKey.has(key)) {
@@ -587,6 +599,11 @@ export function verifyFjspSchedule(
       errors.push(`Unknown op ${key}`);
       skillViolations++;
       continue;
+    }
+    if (spec.waxMold) {
+      const intervals = moldUse.get(spec.waxMold.id) ?? [];
+      intervals.push(op);
+      moldUse.set(spec.waxMold.id, intervals);
     }
     const expectedDur = spec.durations[op.cellId];
     if (expectedDur === undefined || expectedDur !== op.durMin || op.endMin - op.startMin !== op.durMin) {
@@ -685,6 +702,30 @@ export function verifyFjspSchedule(
     }
   }
 
+  for (const [moldId, intervals] of moldUse) {
+    intervals.sort((a, b) => a.startMin - b.startMin);
+    let familyShots = 0;
+    for (const op of intervals) {
+      const mold = jobMap.get(op.jobId)!.ops[op.opIndex].waxMold!;
+      const expected = drawWaxShots(mold, familyShots);
+      // Old single-mold schedules identified their only tool on the PO specification.
+      if (mold.spare || op.moldDraws) {
+        const actual = op.moldDraws ?? [];
+        if (actual.length !== expected.length || expected.some((draw, i) =>
+          draw.moldId !== actual[i].moldId || draw.shots !== actual[i].shots || draw.pieces !== actual[i].pieces)) {
+          errors.push(`Wax mold assignment mismatch at ${op.jobId}#${op.opIndex}`);
+        }
+      }
+      familyShots += shotsForLot(mold.pieces, mold.cavities);
+    }
+    for (let i = 1; i < intervals.length; i++) {
+      if (intervals[i].startMin < intervals[i - 1].endMin) {
+        overlapCount++;
+        errors.push(`Overlap on wax mold ${moldId} between ${intervals[i - 1].jobId} and ${intervals[i].jobId}`);
+      }
+    }
+  }
+
   const valid =
     missingOps === 0 &&
     overlapCount === 0 &&
@@ -758,6 +799,7 @@ function snapToShift(
   shiftMinPerDay: number,
 ): number {
   if (shiftMinPerDay <= 0) return candStart;
+  if (setupBefore + durMin > shiftMinPerDay) return Number.POSITIVE_INFINITY;
   let start = candStart;
   const dayOfSetup = Math.floor((start - setupBefore) / shiftMinPerDay);
   const dayOfStart = Math.floor(start / shiftMinPerDay);
@@ -913,6 +955,8 @@ function decodeSchedule(
   const cellIntervals = new Map<string, CellInterval[]>();
   for (const cell of cells) cellIntervals.set(cell.id, []);
 
+  const moldReady = new Map<string, number>();
+  const moldShotsUsed = new Map<string, number>();
   const jobNext = new Int32Array(nJobs);
   const jobReady = new Float64Array(nJobs);
   const jobDone = new Float64Array(nJobs);
@@ -1025,9 +1069,11 @@ function decodeSchedule(
         const cell = CELLS_BY_ID.get(cellId);
         if (!cell) continue;
         const transferMin = prevCell && prevCell.zone !== cell.zone ? INTER_ZONE_TRANSFER_MIN : 0;
-        const earliestMin = baseReady + transferMin;
+        const moldFree = opSpec.waxMold ? moldReady.get(opSpec.waxMold.id) ?? 0 : 0;
+        const earliestMin = Math.max(baseReady + transferMin, moldFree);
         const ivs = cellIntervals.get(cellId)!;
         const slot = findEarliestSlot(ivs, cell, job.alloy, earliestMin, durMin, shiftMinPerDay);
+        if (!Number.isFinite(slot.startMin)) continue;
         const endMin = slot.startMin + durMin;
 
         const lamNorm = lamNormByCell.get(cellId) ?? 0;
@@ -1099,7 +1145,9 @@ function decodeSchedule(
 
     if (!bestCandidate) {
       return emptyInvalidSolution(
-        'No dispatchable operation remaining (check BOM cycle)',
+        shiftMinPerDay > 0
+          ? `No remaining operation can be dispatched within a ${shiftMinPerDay}-minute shift (check durations, setups and prerequisites)`
+          : 'No dispatchable operation remaining (check BOM cycle)',
         nJobs,
         shiftMinPerDay,
       );
@@ -1128,6 +1176,13 @@ function decodeSchedule(
       opRef: opRecord,
     });
 
+    const waxMold = bestCandidate.opSpec.waxMold;
+    if (waxMold) {
+      const prior = moldShotsUsed.get(waxMold.id) ?? 0;
+      opRecord.moldDraws = drawWaxShots(waxMold, prior);
+      moldShotsUsed.set(waxMold.id, prior + shotsForLot(waxMold.pieces, waxMold.cavities));
+      moldReady.set(waxMold.id, opRecord.endMin);
+    }
     const bjIdx = bestCandidate.jIdx;
     jobReady[bjIdx] = bestCandidate.endMin;
     jobLastCell[bjIdx] = bestCandidate.cell;
@@ -1318,6 +1373,15 @@ export function solveTwoLevelFjsp(
   const offlineCells = Array.from(offlineSet).sort();
 
   const lowerBoundMin = computeLowerBound(jobs, offlineSet);
+  const moldCheck = checkWaxMolds(jobs);
+  if (moldCheck.error) {
+    const invalid = emptyInvalidSolution(moldCheck.error, jobs.length, shiftMinPerDay);
+    return {
+      waxMolds: moldCheck.usage, upperSignals, offlineCells, bottleneckCellId: '', lowerBoundMin,
+      greedyBaseline: invalid, twoLevel: invalid, makespanDeltaMin: 0, makespanImprovementPct: 0,
+      setupSavedMin: 0, tardinessSavedMin: 0, weightedTardinessSavedMin: 0,
+    };
+  }
   const emptyOverrides = new Map<string, string>();
   const greedyBaseline = decodeSchedule(
     jobs,
@@ -1456,7 +1520,12 @@ export function solveTwoLevelFjsp(
       ? greedyBaseline.weightedTardinessMin - twoLevel.weightedTardinessMin
       : 0;
 
+  if (moldCheck.usage.length) {
+    if (twoLevel.feasible) twoLevel.waxMolds = scheduledMoldUsage(moldCheck.usage, twoLevel.ops);
+    if (greedyBaseline.feasible) greedyBaseline.waxMolds = scheduledMoldUsage(moldCheck.usage, greedyBaseline.ops);
+  }
   return {
+    ...(moldCheck.usage.length ? { waxMolds: twoLevel.waxMolds ?? moldCheck.usage } : {}),
     upperSignals,
     offlineCells,
     bottleneckCellId,
@@ -1512,6 +1581,7 @@ export function exportFjspCpSatPython(
       dependsOnJobId: j.dependsOnJobId ?? null,
       ops: j.ops.map((op) => ({
         stage: op.stage,
+        ...(op.waxMold ? { waxMold: op.waxMold } : {}),
         durations: Object.fromEntries(
           Object.entries(op.durations).filter(([cid]) => !offlineSet.has(cid)),
         ),
@@ -1563,6 +1633,12 @@ def solve_jewelry_fjsp():
     cell_by_id = {c["id"]: c for c in CELLS}
     cell_intervals = {c["id"]: [] for c in CELLS}
     cell_records = {c["id"]: [] for c in CELLS}
+    mold_intervals = {}
+    mold_limits = {}
+    mold_stock = {}
+    mold_owner = {}
+    standby_lots = {}
+    mold_shots = {}
     op_vars = {}
     job_starts_by_id = {}
     job_ends_by_id = {}
@@ -1605,6 +1681,25 @@ def solve_jewelry_fjsp():
                 cell_records[cid].append((p, start, end, job["alloy"]))
 
             model.AddExactlyOne(presences)
+            wax = op.get("waxMold")
+            if wax:
+                mid, cavities, pieces = wax["id"], wax["cavities"], wax["pieces"]
+                tools = [(mid, wax["remainingShots"])]
+                if wax.get("spare"):
+                    tools.append((wax["spare"]["id"], wax["spare"]["remainingShots"]))
+                for tool_id, life in tools:
+                    if not tool_id or life < 0 or mold_owner.setdefault(tool_id, mid) != mid:
+                        raise ValueError(f"Invalid wax mold {tool_id}")
+                limit = sum(life for _, life in tools)
+                if (cavities <= 0 or pieces <= 0 or len(set(t for t, _ in tools)) != len(tools)
+                        or mold_stock.setdefault(mid, tools) != tools
+                        or mold_limits.setdefault(mid, (cavities, limit)) != (cavities, limit)):
+                    raise ValueError(f"Invalid wax mold inventory for {mid}")
+                shots = (pieces + cavities - 1) // cavities
+                mold_shots[mid] = mold_shots.get(mid, 0) + shots
+                if len(tools) > 1:
+                    standby_lots.setdefault(mid, []).append((start, jid, shots))
+                mold_intervals.setdefault(mid, []).append(model.NewIntervalVar(start, dur, end, f"mold_{jid}_{op_idx}"))
 
             if prev_end is not None:
                 for p_cid, p_var in prev_choice_vars.items():
@@ -1624,6 +1719,10 @@ def solve_jewelry_fjsp():
             tard = model.NewIntVar(0, HORIZON, f"tard_{jid}")
             model.AddMaxEquality(tard, [0, prev_end - int(job["dueMin"])])
             tardiness_terms.append(int(job.get("priority", 1)) * tard)
+
+    for mid, intervals in mold_intervals.items():
+        model.AddNoOverlap(intervals)
+        model.Add(mold_shots[mid] <= mold_limits[mid][1])
 
     # Explicit FG <-> SG BOM precedence constraints
     for job in JOBS:
@@ -1676,7 +1775,20 @@ def solve_jewelry_fjsp():
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = 10.0
     status = solver.Solve(model)
-    print(f"Status: {solver.StatusName(status)} | Makespan: {solver.Value(makespan)} min | Objective: {solver.ObjectiveValue()}")
+    if status in (cp_model.OPTIMAL, cp_model.FEASIBLE):
+        print(f"Status: {solver.StatusName(status)} | Makespan: {solver.Value(makespan)} min | Objective: {solver.ObjectiveValue()}")
+        # Standby tools have identical cycle times and are used serially, with a zero-time change.
+        for mid, lots in standby_lots.items():
+            (primary, primary_left), (spare, spare_left) = mold_stock[mid]
+            for _, jid, shots in sorted((solver.Value(start), jid, shots) for start, jid, shots in lots):
+                on_primary = min(shots, primary_left)
+                primary_left -= on_primary
+                on_spare = shots - on_primary
+                spare_left -= on_spare
+                print(f"{jid}: {primary} {on_primary} shots, {spare} {on_spare} shots")
+            print(f"Shots left: {primary} {primary_left}, {spare} {spare_left}")
+    else:
+        print(f"Status: {solver.StatusName(status)}")
 
 
 if __name__ == "__main__":

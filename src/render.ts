@@ -2,6 +2,7 @@ import type { AlloyType, CellSpec, FjspSolution } from './fjsp';
 import type { FlowMode, Graph, LabDomain } from './graph';
 import type { ErpComparison } from './mrp';
 import { effectiveEdgeCost } from './solver';
+import type { SystemsEvaluation, SystemsRailStatus } from './systems';
 import type { TerrainField } from './terrain';
 
 function lerp(a: number, b: number, t: number): number {
@@ -30,6 +31,12 @@ export interface RenderOptions {
   showShearHeatmap?: boolean;
   edgeShearNorm?: number[];
   showCapacityBadges?: boolean;
+  graphRagViewerScope?: string;
+  systemsStageHeaders?: Array<{ label: string; x: number }>;
+  systemsRailLabels?: Record<
+    string,
+    { label: string; sharePct: number; status: SystemsRailStatus }
+  >;
 }
 
 function shearHeatmapColor(shear: number): string {
@@ -165,12 +172,91 @@ export function render(ctx: CanvasRenderingContext2D, graph: Graph, options: Ren
     ctx.restore();
   }
 
+  if (domain === 'graphrag') {
+    const cols = [
+      { label: 'QUERY TERMINALS', x: 95 },
+      { label: 'EVIDENCE & CERTS', x: 310 },
+      { label: 'SUPPLIERS / HUB', x: 525 },
+      { label: 'CATALOG NOISE', x: 785 },
+    ];
+    const dividers = [202, 405, 660];
+    ctx.save();
+    ctx.font = '600 11px Inter, ui-sans-serif, system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.strokeStyle = 'rgba(15, 23, 42, 0.08)';
+    ctx.lineWidth = 1;
+    for (const col of cols) {
+      ctx.fillStyle = '#334155';
+      ctx.fillText(col.label, col.x, 22);
+    }
+    for (const divX of dividers) {
+      ctx.beginPath();
+      ctx.moveTo(divX, 34);
+      ctx.lineTo(divX, h - 16);
+      ctx.stroke();
+    }
+    if (options.graphRagViewerScope) {
+      ctx.textAlign = 'right';
+      ctx.font = '700 10px ui-monospace, SFMono-Regular, Menlo, monospace';
+      ctx.fillStyle = options.graphRagViewerScope === 'buyer' ? '#0f766e' : '#7e22ce';
+      ctx.fillText(`SCOPE: ${options.graphRagViewerScope.toUpperCase()}`, w - 16, 22);
+    }
+    ctx.restore();
+  }
+
+  if (domain === 'systems' && options.systemsStageHeaders && options.systemsStageHeaders.length > 0) {
+    const hdrs = options.systemsStageHeaders;
+    ctx.save();
+    ctx.font = '600 11px Inter, ui-sans-serif, system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.strokeStyle = 'rgba(15, 23, 42, 0.08)';
+    ctx.lineWidth = 1;
+    for (let s = 0; s < hdrs.length; s++) {
+      ctx.fillStyle = '#334155';
+      ctx.fillText(hdrs[s].label.toUpperCase(), hdrs[s].x, 22);
+      if (s > 0) {
+        const divX = (hdrs[s - 1].x + hdrs[s].x) / 2;
+        ctx.beginPath();
+        ctx.moveTo(divX, 34);
+        ctx.lineTo(divX, h - 18);
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
+  }
+
   ctx.save();
   ctx.lineCap = 'round';
   for (let idx = 0; idx < graph.edges.length; idx++) {
     const edge = graph.edges[idx];
     const a = graph.nodes[edge.i];
     const b = graph.nodes[edge.j];
+
+    if (edge.scopeBlocked) {
+      ctx.save();
+      ctx.strokeStyle = 'rgba(147, 51, 234, 0.55)';
+      ctx.lineWidth = 1.8;
+      ctx.setLineDash([2, 5]);
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.stroke();
+
+      const mx = (a.x + b.x) / 2;
+      const my = (a.y + b.y) / 2;
+      ctx.setLineDash([]);
+      ctx.font = '700 9px ui-monospace, SFMono-Regular, Menlo, monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = 'rgba(88, 28, 135, 0.9)';
+      ctx.fillRect(mx - 14, my - 7, 28, 14);
+      ctx.fillStyle = '#f3e8ff';
+      ctx.fillText('T04', mx, my);
+      ctx.restore();
+      continue;
+    }
 
     if (edge.severed) {
       ctx.save();
@@ -199,6 +285,19 @@ export function render(ctx: CanvasRenderingContext2D, graph: Graph, options: Ren
         ctx.textBaseline = 'bottom';
         ctx.fillStyle = '#b91c1c';
         ctx.fillText(`${edge.cellId} (OFF)`, mx, my - 10);
+      } else if (domain === 'systems' && edge.cellId) {
+        const meta = options.systemsRailLabels?.[edge.cellId];
+        ctx.font = '700 10px ui-monospace, SFMono-Regular, Menlo, monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'bottom';
+        ctx.fillStyle = '#dc2626';
+        ctx.fillText(`${meta?.label ?? edge.cellId} (DOWN)`, mx, my - 10);
+      } else if (domain === 'graphrag') {
+        ctx.font = '700 9px ui-monospace, SFMono-Regular, Menlo, monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'bottom';
+        ctx.fillStyle = '#b91c1c';
+        ctx.fillText(edge.expired ? 'EXPIRED' : 'REVOKED', mx, my - 7);
       }
       ctx.restore();
       continue;
@@ -236,6 +335,21 @@ export function render(ctx: CanvasRenderingContext2D, graph: Graph, options: Ren
       } else {
         strokeStyle = d > 0.5 ? '#0f766e' : '#0284c7';
       }
+    } else if (domain === 'graphrag') {
+      const lam = edge.congestion ?? 0;
+      strokeWidth = lerp(0.8, 8.5, d);
+      alpha = d >= 0.01 ? Math.max(0.32, Math.min(1, d)) : 0.08;
+      if (idx === options.hoveredEdgeIndex) {
+        strokeStyle = '#15803d';
+      } else if (lam > 0.35) {
+        strokeStyle = '#dc2626';
+      } else if (lam > 0.05) {
+        strokeStyle = '#d97706';
+      } else if (d > 0.25) {
+        strokeStyle = '#0f766e';
+      } else {
+        strokeStyle = '#64748b';
+      }
     } else if (domain === 'fjsp') {
       if (edge.cellId) {
         const lam = edge.congestion ?? 0;
@@ -255,6 +369,44 @@ export function render(ctx: CanvasRenderingContext2D, graph: Graph, options: Ren
         alpha = d >= 0.01 ? Math.max(0.18, d * 0.85) : 0.06;
         strokeStyle = idx === options.hoveredEdgeIndex ? '#15803d' : '#475569';
       }
+    } else if (domain === 'systems') {
+      const lam = edge.congestion ?? 0;
+      const util =
+        edge.capacity !== undefined && edge.capacity > 0
+          ? Math.abs(edge.flow) / edge.capacity
+          : 0;
+      if (edge.cellId) {
+        strokeWidth = lerp(6, 15, d);
+        alpha = Math.max(0.42, Math.min(1, 0.35 + d));
+        if (idx === options.hoveredEdgeIndex) {
+          strokeStyle = '#15803d';
+        } else if (lam > 0.35 || util > 1.05) {
+          strokeStyle = '#dc2626';
+        } else if (lam > 0.05 || util >= 0.9) {
+          strokeStyle = '#d97706';
+        } else if (Math.abs(edge.flow) > 0.02 || d > 0.25) {
+          strokeStyle = '#0f766e';
+        } else {
+          strokeStyle = '#64748b';
+        }
+      } else {
+        strokeWidth = lerp(0.8, 5.2, d);
+        alpha = d >= 0.01 ? Math.max(0.16, Math.min(0.85, d)) : 0.06;
+        strokeStyle = idx === options.hoveredEdgeIndex ? '#15803d' : '#334155';
+      }
+    }
+
+    if (domain === 'systems' && edge.cellId && (edge.congestion ?? 0) > 0.05) {
+      const lam = edge.congestion ?? 0;
+      ctx.save();
+      ctx.strokeStyle =
+        lam > 0.35 ? 'rgba(220, 38, 38, 0.28)' : 'rgba(217, 119, 6, 0.26)';
+      ctx.lineWidth = strokeWidth + 8;
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.stroke();
+      ctx.restore();
     }
 
     if (idx === options.hoveredEdgeIndex) {
@@ -290,6 +442,30 @@ export function render(ctx: CanvasRenderingContext2D, graph: Graph, options: Ren
       ctx.fillStyle = (edge.congestion ?? 0) > 0.05 ? '#b45309' : '#0f172a';
       ctx.fillText(edge.cellId, mx, my - 11);
       ctx.restore();
+    } else if (domain === 'systems' && edge.cellId) {
+      const meta = options.systemsRailLabels?.[edge.cellId];
+      const lam = edge.congestion ?? 0;
+      const labelText = meta
+        ? `${meta.label} · ${Math.round(meta.sharePct)}%`
+        : edge.cellId;
+      ctx.save();
+      ctx.globalAlpha = 1;
+      const mx = (a.x + b.x) / 2;
+      const my = (a.y + b.y) / 2;
+      ctx.font = '700 10px ui-monospace, SFMono-Regular, Menlo, monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'bottom';
+      ctx.lineWidth = 3.2;
+      ctx.strokeStyle = 'rgba(243, 242, 232, 0.96)';
+      ctx.strokeText(labelText, mx, my - 13);
+      ctx.fillStyle =
+        meta?.status === 'SATURATED' || lam > 0.35
+          ? '#b91c1c'
+          : meta?.status === 'SPILLING' || lam > 0.05
+            ? '#b45309'
+            : '#0f172a';
+      ctx.fillText(labelText, mx, my - 13);
+      ctx.restore();
     }
   }
   ctx.restore();
@@ -301,7 +477,7 @@ export function render(ctx: CanvasRenderingContext2D, graph: Graph, options: Ren
     const minParticleFlow = domain === 'transport' ? 0.03 : 0.015;
     ctx.save();
     for (const edge of graph.edges) {
-      if (edge.severed || edge.D <= minParticleD || Math.abs(edge.flow) <= minParticleFlow) continue;
+      if (edge.severed || edge.scopeBlocked || edge.D <= minParticleD || Math.abs(edge.flow) <= minParticleFlow) continue;
       const a = graph.nodes[edge.i];
       const b = graph.nodes[edge.j];
       const forward = edge.flow >= 0;
@@ -309,7 +485,12 @@ export function render(ctx: CanvasRenderingContext2D, graph: Graph, options: Ren
       const sy = forward ? a.y : b.y;
       const ex = forward ? b.x : a.x;
       const ey = forward ? b.y : a.y;
-      const count = edge.length > 90 ? 2 : 1;
+      const count =
+        domain === 'systems'
+          ? Math.min(4, Math.max(1, Math.ceil(Math.abs(edge.flow) * 5)))
+          : edge.length > 90
+            ? 2
+            : 1;
       for (let k = 0; k < count; k++) {
         const t = (phase + k / count) % 1;
         const px = lerp(sx, ex, t);
@@ -317,13 +498,18 @@ export function render(ctx: CanvasRenderingContext2D, graph: Graph, options: Ren
         ctx.fillStyle =
           domain === 'vascular'
             ? '#fecaca'
-            : domain === 'optimization' || domain === 'fjsp'
-              ? '#5eead4'
-              : '#a3e66f';
+            : domain === 'systems' && (edge.congestion ?? 0) > 0.05
+              ? '#fde047'
+              : domain === 'optimization' ||
+                  domain === 'fjsp' ||
+                  domain === 'graphrag' ||
+                  domain === 'systems'
+                ? '#5eead4'
+                : '#a3e66f';
         ctx.strokeStyle = '#141812';
         ctx.lineWidth = 1;
         ctx.beginPath();
-        ctx.arc(px, py, 2.7, 0, Math.PI * 2);
+        ctx.arc(px, py, domain === 'systems' ? 3.1 : 2.7, 0, Math.PI * 2);
         ctx.fill();
         ctx.stroke();
       }
@@ -338,7 +524,7 @@ export function render(ctx: CanvasRenderingContext2D, graph: Graph, options: Ren
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     for (const edge of graph.edges) {
-      if (edge.severed || edge.capacity === undefined || !Number.isFinite(edge.capacity)) continue;
+      if (edge.severed || edge.scopeBlocked || edge.capacity === undefined || !Number.isFinite(edge.capacity)) continue;
       const a = graph.nodes[edge.i];
       const b = graph.nodes[edge.j];
       const mx = (a.x + b.x) / 2;
@@ -394,7 +580,27 @@ export function render(ctx: CanvasRenderingContext2D, graph: Graph, options: Ren
     }
 
     let radius = 4.5;
-    if (isMulti) {
+    if (domain === 'graphrag' && node.role) {
+      if (node.role === 'query') {
+        ctx.fillStyle = '#16a34a';
+        radius = 7;
+      } else if (node.role === 'supplier') {
+        ctx.fillStyle = '#0f766e';
+        radius = 7;
+      } else if (node.role === 'hub') {
+        ctx.fillStyle = '#d97706';
+        radius = 7;
+      } else if (node.role === 'evidence') {
+        ctx.fillStyle = '#4f46e5';
+        radius = 5;
+      } else if (node.role === 'private') {
+        ctx.fillStyle = '#9333ea';
+        radius = 5;
+      } else {
+        ctx.fillStyle = '#94a3b8';
+        radius = 4;
+      }
+    } else if (isMulti) {
       if (node.flow !== 0) {
         ctx.fillStyle = '#d97706';
         radius = 6.5;
@@ -417,7 +623,11 @@ export function render(ctx: CanvasRenderingContext2D, graph: Graph, options: Ren
     ctx.arc(node.x, node.y, radius, 0, Math.PI * 2);
     ctx.fill();
 
-    if (node.flow !== 0) {
+    if (
+      node.flow !== 0 ||
+      (domain === 'graphrag' &&
+        (node.role === 'supplier' || node.role === 'hub' || node.role === 'private'))
+    ) {
       ctx.strokeStyle = '#141812';
       ctx.lineWidth = 1.4;
       ctx.stroke();
@@ -946,6 +1156,188 @@ export function renderCashFlowChart(ctx: CanvasRenderingContext2D, erpCmp: ErpCo
         ctx.fillText(`Min ${formatUsdCompact(row.closingCashUsd)}`, px, Math.max(topPad + 10, py - 11));
       }
     }
+  }
+
+  ctx.restore();
+}
+
+export function renderSystemsComparisonChart(
+  ctx: CanvasRenderingContext2D,
+  evalRes: SystemsEvaluation,
+): void {
+  const w = ctx.canvas.width;
+  const h = ctx.canvas.height;
+  ctx.save();
+  ctx.clearRect(0, 0, w, h);
+
+  ctx.fillStyle = '#0b1014';
+  ctx.fillRect(0, 0, w, h);
+  ctx.strokeStyle = 'rgba(148, 163, 184, 0.16)';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(0.5, 0.5, w - 1, h - 1);
+
+  const divX = 538;
+  ctx.beginPath();
+  ctx.moveTo(divX, 14);
+  ctx.lineTo(divX, h - 14);
+  ctx.stroke();
+
+  // Left: Live Rail Load vs Capacity bars
+  ctx.font = '700 11px Inter, ui-sans-serif, system-ui, sans-serif';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#d8f8bd';
+  ctx.fillText(
+    `LIVE RAIL UTILIZATION (LOAD vs CAPACITY u_e · Demand ${Math.round(evalRes.totalDemand)} ${evalRes.throughputUnit})`,
+    16,
+    20,
+  );
+
+  const rails = evalRes.rails;
+  const barTop = 38;
+  const rowGap = rails.length > 0 ? Math.min(40, (h - barTop - 16) / rails.length) : 36;
+  const labelX = 16;
+  const barX = 112;
+  const barW = 246;
+  const capX = barX + barW * 0.78; // 100% cap line sits at 78% of max bar width to show up to ~128% overload
+
+  for (let idx = 0; idx < rails.length; idx++) {
+    const r = rails[idx];
+    const cy = barTop + idx * rowGap + rowGap * 0.45;
+    const bh = Math.min(18, rowGap * 0.56);
+    const by = cy - bh / 2;
+
+    ctx.font = '600 11px ui-monospace, SFMono-Regular, Menlo, monospace';
+    ctx.textAlign = 'left';
+    ctx.fillStyle = r.offline ? '#f87171' : '#e2e8f0';
+    ctx.fillText(r.shortLabel, labelX, cy);
+
+    // Track background
+    ctx.fillStyle = '#151d24';
+    ctx.fillRect(barX, by, barW, bh);
+
+    if (!r.offline && r.capUnits > 0) {
+      const ratio = Math.min(1.28, r.loadUnits / r.capUnits);
+      const fillW = (ratio / 1.28) * barW;
+      ctx.fillStyle =
+        r.status === 'SATURATED'
+          ? '#ef4444'
+          : r.status === 'SPILLING'
+            ? '#f59e0b'
+            : '#10b981';
+      ctx.fillRect(barX, by, fillW, bh);
+    }
+
+    // 100% Capacity marker
+    ctx.save();
+    ctx.strokeStyle = 'rgba(226, 232, 240, 0.55)';
+    ctx.setLineDash([3, 2]);
+    ctx.lineWidth = 1.1;
+    ctx.beginPath();
+    ctx.moveTo(capX, by - 2);
+    ctx.lineTo(capX, by + bh + 2);
+    ctx.stroke();
+    ctx.restore();
+
+    ctx.font = '10px ui-monospace, SFMono-Regular, Menlo, monospace';
+    ctx.textAlign = 'left';
+    ctx.fillStyle = r.offline ? '#fca5a5' : r.shadowPriceLambda > 0.05 ? '#fde68a' : '#94a3b8';
+    const capText = r.offline
+      ? 'OFFLINE (Cut)'
+      : `${Math.round(r.loadUnits)}/${Math.round(r.capUnits)} (${Math.round(r.sharePct)}%) λ=${r.shadowPriceLambda.toFixed(2)}`;
+    ctx.fillText(capText, barX + barW + 10, cy);
+  }
+
+  // Right: Physarum Control-Plane vs Static Baseline
+  const rx = divX + 16;
+  const rw = w - rx - 16;
+  ctx.font = '700 11px Inter, ui-sans-serif, system-ui, sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillStyle = '#93c5fd';
+  ctx.fillText('PHYSARUM CONTROL-PLANE vs STATIC ROUTER', rx, 20);
+
+  const compRows: Array<{
+    title: string;
+    phyVal: number;
+    staVal: number;
+    phyLabel: string;
+    staLabel: string;
+    maxVal: number;
+    goodLower: boolean;
+  }> = [
+    {
+      title: 'Overload / Drop Rate',
+      phyVal: evalRes.physarum.dropPct,
+      staVal: evalRes.staticBaseline.dropPct,
+      phyLabel: `Phy ${evalRes.physarum.dropPct.toFixed(1)}%`,
+      staLabel: `Static ${evalRes.staticBaseline.dropPct.toFixed(1)}%`,
+      maxVal: Math.max(10, evalRes.physarum.dropPct, evalRes.staticBaseline.dropPct),
+      goodLower: true,
+    },
+    {
+      title: evalRes.successMetricLabel,
+      phyVal: evalRes.physarum.successPct,
+      staVal: evalRes.staticBaseline.successPct,
+      phyLabel: `Phy ${evalRes.physarum.successPct.toFixed(1)}%`,
+      staLabel: `Static ${evalRes.staticBaseline.successPct.toFixed(1)}%`,
+      maxVal: 100,
+      goodLower: false,
+    },
+    {
+      title: `${evalRes.costMetricLabel} (${evalRes.costUnit})`,
+      phyVal: evalRes.physarum.avgCost,
+      staVal: evalRes.staticBaseline.avgCost,
+      phyLabel: `Phy ${evalRes.physarum.avgCost.toFixed(evalRes.costUnit === '%' ? 2 : 1)}${evalRes.costUnit}`,
+      staLabel: `Static ${evalRes.staticBaseline.avgCost.toFixed(evalRes.costUnit === '%' ? 2 : 1)}${evalRes.costUnit}`,
+      maxVal: Math.max(1, evalRes.physarum.avgCost, evalRes.staticBaseline.avgCost) * 1.15,
+      goodLower: true,
+    },
+  ];
+
+  const barWidthRight = rw - 115;
+  for (let i = 0; i < compRows.length; i++) {
+    const row = compRows[i];
+    const y0 = 40 + i * 48;
+    ctx.font = '600 10px Inter, ui-sans-serif, system-ui, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#cbd5e1';
+    ctx.fillText(row.title, rx, y0 + 4);
+
+    const phyW = Math.min(barWidthRight, (row.phyVal / row.maxVal) * barWidthRight);
+    ctx.fillStyle = '#151d24';
+    ctx.fillRect(rx, y0 + 13, barWidthRight, 10);
+    ctx.fillStyle = row.goodLower && row.phyVal > 5 ? '#f59e0b' : '#2dd4bf';
+    ctx.fillRect(rx, y0 + 13, Math.max(2, phyW), 10);
+    ctx.font = '600 10px ui-monospace, SFMono-Regular, Menlo, monospace';
+    ctx.fillStyle = '#a7f3d0';
+    ctx.fillText(row.phyLabel, rx + barWidthRight + 8, y0 + 18);
+
+    const staW = Math.min(barWidthRight, (row.staVal / row.maxVal) * barWidthRight);
+    ctx.fillStyle = '#151d24';
+    ctx.fillRect(rx, y0 + 26, barWidthRight, 10);
+    ctx.fillStyle = row.goodLower && row.staVal > 5 ? '#ef4444' : '#64748b';
+    ctx.fillRect(rx, y0 + 26, Math.max(2, staW), 10);
+    ctx.fillStyle = '#cbd5e1';
+    ctx.fillText(row.staLabel, rx + barWidthRight + 8, y0 + 31);
+  }
+
+  // Bottom callout pill
+  ctx.font = '700 11px ui-monospace, SFMono-Regular, Menlo, monospace';
+  ctx.textAlign = 'left';
+  if (evalRes.dropReductionPct > 0.2) {
+    ctx.fillStyle = '#86efac';
+    ctx.fillText(
+      `SAVED: -${evalRes.dropReductionPct.toFixed(1)}% drops vs Static · Max λ=${evalRes.physarum.maxLambda.toFixed(2)}`,
+      rx,
+      h - 16,
+    );
+  } else {
+    ctx.fillStyle = '#cbd5e1';
+    ctx.fillText(
+      `Steered by λ_e (Max λ=${evalRes.physarum.maxLambda.toFixed(2)}) · 0 overload drops`,
+      rx,
+      h - 16,
+    );
   }
 
   ctx.restore();

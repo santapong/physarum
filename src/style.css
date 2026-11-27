@@ -125,6 +125,7 @@ canvas#sparkline { display: block; width: 220px; height: 44px; }
   font-weight: 600;
 }
 .fjsp-badge.is-valid { background: rgba(34, 197, 94, 0.18); color: #86efac; border: 1px solid rgba(34, 197, 94, 0.45); }
+.fjsp-badge.is-warn { background: rgba(245, 158, 11, 0.18); color: #fde68a; border: 1px solid rgba(245, 158, 11, 0.45); }
 .fjsp-badge.is-invalid { background: rgba(239, 68, 68, 0.18); color: #fca5a5; border: 1px solid rgba(239, 68, 68, 0.45); }
 #fjsp-toggle-view { font-size: 0.78rem; padding: 0.4rem 0.7rem; }
 canvas#gantt {
@@ -142,6 +143,20 @@ canvas#gantt {
   font-size: 0.76rem;
   color: #a9b0aa;
 }
+.po-usage, .po-editor p { font-size: 0.8rem; color: #b0bab5; }
+.po-editor { margin-top: 0.65rem; border-top: 1px solid #252a2e; padding-top: 0.65rem; }
+.po-editor summary { cursor: pointer; font-weight: 600; }
+.po-editor form { margin-top: 0.8rem; }
+.po-editor label { display: block; font-size: 0.82rem; }
+.po-editor select { display: block; max-width: 32rem; }
+.po-operations { display: grid; gap: 0.5rem; margin-bottom: 0.8rem; }
+.po-operations fieldset { min-width: 0; margin: 0; display: flex; align-items: end; gap: 0.65rem; flex-wrap: wrap; border: 1px solid #343d39; border-radius: 6px; }
+.po-operations legend { padding: 0 0.3rem; font-weight: 600; }
+.po-operations input[type="number"] { display: block; width: 7rem; }
+.po-operations input:disabled { opacity: 0.5; }
+.po-operations small { color: #adc293; align-self: center; }
+.po-editor output { margin-left: 0.5rem; }
+
 .gantt-legend span { display: inline-flex; align-items: center; gap: 0.35rem; }
 .gantt-swatch { display: inline-block; width: 0.7rem; height: 0.7rem; border-radius: 3px; }
 .gantt-swatch.alloy-18ky { background: #eab308; }
@@ -309,4 +324,89 @@ canvas#crossbar {
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; }
+}
+
+.factory-plan-link { color: #c1dfab; text-underline-offset: 3px; align-self: center; font-size: 0.85rem; }
+
+.graphrag-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  justify-content: space-between;
+  gap: 0.65rem;
+  margin-bottom: 0.35rem;
+}
+.graphrag-scope-label {
+  display: grid;
+  gap: 0.25rem;
+  font-size: 0.78rem;
+  color: #cdd2cd;
+  min-width: 14.5rem;
+}
+.graphrag-scope-label select {
+  padding: 0.4rem 0.55rem;
+  font-size: 0.8rem;
+}
+.graphrag-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+.graphrag-actions button {
+  padding: 0.4rem 0.68rem;
+  font-size: 0.78rem;
+}
+
+.systems-conditions {
+  display: grid;
+  gap: 0.65rem;
+  padding: 0.75rem;
+  border-radius: 10px;
+  border: 1px solid #242b26;
+  background: #0d120f;
+}
+.sys-cond-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.sys-load-field {
+  flex: 1 1 240px;
+  display: grid;
+  gap: 0.35rem;
+  font-size: 0.82rem;
+  color: #cdd2cd;
+}
+.sys-quick-btns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+.sys-quick-btns button,
+.sys-rail-action button {
+  padding: 0.42rem 0.72rem;
+  font-size: 0.78rem;
+}
+.sys-cond-grid {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr 1fr auto;
+  gap: 0.65rem;
+  align-items: end;
+}
+.sys-cond-grid .field {
+  margin-top: 0;
+}
+canvas#syschart {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 10px;
+  border: 1px solid #252a2e;
+}
+@media (max-width: 900px) {
+  .sys-cond-grid {
+    grid-template-columns: 1fr;
+  }
 }

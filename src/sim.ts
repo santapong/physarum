@@ -9,6 +9,7 @@ export interface StepOptions {
   random?: () => number;
   prevPressures?: number[];
   pairSamples?: number;
+  deterministicAllPairs?: boolean;
 }
 
 export interface StepMetrics {
@@ -97,7 +98,7 @@ export function step(
     };
   }
 
-  if (flowMode === 'multi-terminal' && dynamicsMode !== 'linear-lp') {
+  if (flowMode === 'multi-terminal') {
     const terminals: number[] = [];
     for (const node of graph.nodes) {
       if (node.flow !== 0) terminals.push(node.id);
@@ -113,8 +114,19 @@ export function step(
       };
     }
 
+    const useAllPairs = dynamicsMode === 'linear-lp' || Boolean(options.deterministicAllPairs);
     const rand = options.random ?? Math.random;
-    const pairs = sampleTerminalPairs(terminals, options.pairSamples ?? 8, rand);
+    const pairs: Array<[number, number]> = useAllPairs
+      ? (() => {
+          const all: Array<[number, number]> = [];
+          for (let i = 0; i < terminals.length; i++) {
+            for (let j = i + 1; j < terminals.length; j++) {
+              all.push([terminals[i], terminals[j]]);
+            }
+          }
+          return all;
+        })()
+      : sampleTerminalPairs(terminals, options.pairSamples ?? 8, rand);
     const nEdges = graph.edges.length;
     const flowSqSum = new Float64Array(nEdges);
     const lastSignedFlow = new Float64Array(nEdges);
@@ -139,7 +151,7 @@ export function step(
 
       for (let eIdx = 0; eIdx < nEdges; eIdx++) {
         const edge = graph.edges[eIdx];
-        if (edge.severed) continue;
+        if (edge.severed || edge.scopeBlocked || edge.D <= 1e-12) continue;
         const congestionScale = 1 + Math.max(edge.congestion ?? 0, 0);
         const w = edge.D / (effectiveEdgeCost(edge) * congestionScale);
         const qSigned = w * (lastPressures[edge.i] - lastPressures[edge.j]);
@@ -149,6 +161,7 @@ export function step(
     }
 
     const m = Math.max(1, pairs.length);
+    const maxD = dynamicsMode === 'linear-lp' ? 10 : 1;
     let maxChange = 0;
     let totalChange = 0;
     for (let eIdx = 0; eIdx < nEdges; eIdx++) {
@@ -156,17 +169,39 @@ export function step(
       if (edge.severed) {
         edge.D = 0;
         edge.flow = 0;
+        edge.congestion = 0;
+        continue;
+      }
+      if (edge.scopeBlocked) {
+        edge.flow = 0;
+        edge.congestion = 0;
         continue;
       }
       const rmsFlow = Math.sqrt(flowSqSum[eIdx] / m);
       const sign = lastSignedFlow[eIdx] < 0 ? -1 : 1;
       edge.flow = rmsFlow * sign;
-      const f = targetConductivity(rmsFlow, mu, dynamicsMode);
-      const nextD = clampConductivity((edge.D + dt * f) / (1 + dt), 1);
-      const change = nextD - edge.D;
+      const rawTarget =
+        dynamicsMode === 'linear-lp'
+          ? Math.min(maxD, Math.pow(rmsFlow, mu))
+          : targetConductivity(rmsFlow, mu, dynamicsMode);
+      const nextD = clampConductivity((edge.D + dt * rawTarget) / (1 + dt), maxD);
+      let edgeDelta = Math.abs(nextD - edge.D);
       edge.D = nextD;
-      maxChange = Math.max(maxChange, Math.abs(change));
-      totalChange += Math.abs(change);
+
+      if (
+        useAllPairs &&
+        edge.capacity !== undefined &&
+        Number.isFinite(edge.capacity)
+      ) {
+        const oldLambda = edge.congestion ?? 0;
+        const qPred = rmsFlow + 0.8 * (rmsFlow - nextD);
+        const nextLambda = Math.min(50, Math.max(0, oldLambda + dt * 2.0 * (qPred - edge.capacity)));
+        edge.congestion = nextLambda;
+        edgeDelta = Math.max(edgeDelta, Math.abs(nextLambda - oldLambda) * 0.05);
+      }
+
+      maxChange = Math.max(maxChange, edgeDelta);
+      totalChange += edgeDelta;
     }
 
     return {
@@ -189,6 +224,11 @@ export function step(
   for (const edge of graph.edges) {
     if (edge.severed) {
       edge.D = 0;
+      edge.flow = 0;
+      edge.congestion = 0;
+      continue;
+    }
+    if (edge.scopeBlocked) {
       edge.flow = 0;
       edge.congestion = 0;
       continue;

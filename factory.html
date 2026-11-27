@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>20-cell production plan · Physarum Pathfinder</title>
+</head>
+<body>
+<main class="shop-shell">
+  <header class="shop-head">
+    <div><a class="back-link" href="./index.html">← Physarum Pathfinder</a><h1>20-cell production plan</h1>
+      <p id="plan-title-detail">Jewelry FJSP · 300 production orders · 20 pieces per order · 560-minute shifts</p></div>
+    <button id="save-plan" type="button">Export plan (.json)</button>
+  </header>
+  <nav class="shop-nav" aria-label="Production plan sections">
+    <a href="#purchasing">Purchasing</a><a href="#cash">Cash flow</a><a href="#material">Materials</a><a href="#capacity">Cells &amp; batches</a>
+    <a href="#arrival">Incoming PO trial</a><a href="#tooling">Wax molds</a><a href="#order">PO schedule</a>
+  </nav>
+  <section class="shop-panel" id="arrival">
+    <h2>Incoming PO &amp; gold storage trial</h2>
+    <p>Receive PO-301 for 20 yellow-gold solitaires during a shift. Started bookings finish as scheduled. The remaining queue is scheduled again using the stock on hand.</p>
+    <form id="arrival-form">
+      <div class="controls-grid">
+        <label>Arrival day <input name="arrivalDay" type="number" min="1" max="365" value="3" required></label>
+        <label>Minutes into shift <input name="arrivalMinute" type="number" min="0" max="559" value="120" required></label>
+        <label>18K-Y grain storage limit (g) <input name="goldLimit" type="number" min="800" step="1" value="2000" required></label>
+      </div>
+      <button class="primary" type="submit">Run incoming PO trial</button>
+      <button id="restore-baseline" type="button" hidden>Show original 300 POs</button>
+    </form>
+    <div id="arrival-results" hidden aria-live="polite">
+      <p id="arrival-summary"></p><div id="arrival-comparison"></div>
+      <p id="delivery-notes"></p>
+      <details><summary>Existing orders with revised completion times</summary><div id="arrival-changes"></div></details>
+    </div>
+  </section>
+  <details class="shop-panel settings" id="assumptions">
+    <summary>Scenario assumptions &amp; controls</summary>
+    <p>Illustrative USD inputs. Each batch uses one shared line and combines compatible orders of the same alloy.
+       Labor is charged per occupied resource-hour. Opening inventory is already paid. Metal and consumable deliveries precede issues on the same day.</p>
+    <form id="settings-form"><div id="setting-fields" class="controls-grid"></div>
+      <label class="inline-check"><input type="checkbox" id="buy-molds" checked> Procure replacement molds when shot life runs out</label>
+      <p id="cost-assumptions"></p><button class="primary">Recalculate plan</button></form>
+  </details>
+    <section class="shop-panel" id="purchasing">
+      <h2>Purchasing &amp; shipment timing</h2>
+      <label>Purchasing policy for the plan
+        <select id="purchase-policy"><option value="early">Order against PO release dates</option><option value="po-start">Stage purchases from each PO’s planned start</option></select>
+      </label>
+      <p>Use available stock first. For a shortage, the staged plan releases a supplier lot on or after the PO’s planned start day, counting back from the operation that needs it by supplier lead time. Production waits for the receipt.</p>
+      <p id="purchase-result"></p><div id="policy-comparison"></div>
+      <details><summary>Daily supplier orders, receipts and finished shipments</summary><div id="supply-calendar"></div></details>
+    </section>
+  <p id="plan-error" role="alert" hidden></p>
+  <div id="result">
+    <div id="kpis" class="shop-kpis"></div>
+    <section class="shop-panel" id="cash"><h2>Cash flow</h2>
+      <h3>18K-Y supplier payment comparison</h3>
+      <p id="gold-savings"></p><div id="gold-comparison"></div>
+      <details><summary>Gold deliveries and supplier payments</summary><div id="gold-payments"></div></details>
+      <label>Payment terms for the chart and ledgers
+        <select id="gold-terms"><option value="upfront">Pay 18K-Y on order</option><option value="delivery">Pay 18K-Y on delivery</option></select>
+      </label><p id="cash-caption"></p>
+      <canvas id="cash-chart" width="1080" height="190" aria-label="Daily closing cash in USD"></canvas>
+      <details><summary>Daily cash ledger</summary><div id="cash-ledger"></div></details>
+    </section>
+    <section class="shop-panel" id="material"><h2>Material requirements</h2><p id="material-caption"></p>
+      <div id="mrp"></div>
+      <details><summary>Internal mounting inventory</summary><div id="mounting-ledger"></div></details>
+      <details><summary>Purchase and receipt dates</summary><div id="purchases"></div></details>
+      <details><summary>Daily stock movements</summary><label>Material <select id="stock-select"></select></label><div id="stock-ledger"></div></details>
+    </section>
+    <section class="shop-panel" id="capacity"><h2>Cells &amp; batch capacity</h2><p>Cells 1–10 process gold. Cells 11–20 process silver, bronze and brass. Cell 21 is dedicated to setting.</p>
+      <div class="capacity-grid"><div><h3>Daily casting</h3><div id="casting"></div></div><div><h3>Shared batch equipment</h3><div id="batch-summary"></div></div></div>
+      <details><summary>Workload by cell</summary><div id="cells"></div></details>
+      <details><summary>Batch contents and timing</summary><div id="batches"></div></details>
+    </section>
+    <section class="shop-panel" id="tooling"><h2>Wax mold life</h2><p>Life is consumed by injection shots. A partially filled shot costs one cycle. Primary, spare and purchased replacements are used in order.</p><div id="molds"></div></section>
+    <section class="shop-panel" id="order"><h2>PO schedule</h2>
+      <label>Production order <select id="po-select"></select></label>
+      <p id="po-route"></p><div id="po-detail"></div><div id="po-material"></div>
+      <details><summary>Supplier releases triggered by this PO</summary><p id="po-buy-note"></p><div id="po-buys"></div></details>
+      <details><summary>Edit this PO’s processing times &amp; plating</summary><form id="po-edit"><div id="po-fields" class="controls-grid"></div><button class="primary">Apply PO changes</button></form></details>
+    </section>
+  </div>
+</main><script type="module" src="./src/shop-ui.ts"></script>
+</body></html>

@@ -79,6 +79,28 @@ describe('share state', () => {
     expect(decodeState(encodeState(stateFjsp))).toEqual(stateFjsp);
   });
 
+  it('round-trips a valid v3 graphrag scenario preserving node roles and rooms', () => {
+    const stateGraphRag: SharedState = {
+      version: 3,
+      domain: 'graphrag',
+      dynamicsMode: 'linear-lp',
+      nodes: [
+        { id: 0, x: 95, y: 105, flow: 1, label: 'Q1 Spec', role: 'query' },
+        { id: 1, x: 445, y: 52, flow: 0, label: 'RoomA Margin', role: 'private', room: 'room-siam' },
+        { id: 2, x: 575, y: 130, flow: 0, label: 'SiamSensor OEM', role: 'supplier' },
+      ],
+      mode: 'explicit',
+      flowMode: 'multi-terminal',
+      mu: 1.0,
+      dt: 0.05,
+      speed: 8,
+      seed: 6101,
+      presetId: 'graphrag-tender-sensors',
+      capacities: [{ i: 0, j: 2, capacity: 0.1 }],
+    };
+    expect(decodeState(encodeState(stateGraphRag))).toEqual(stateGraphRag);
+  });
+
   it('sanitizes malformed v3 fields cleanly without throwing', () => {
     const cleaned = sanitizeState({
       ...stateV3,

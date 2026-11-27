@@ -4,4 +4,5 @@ import { defineConfig } from 'vite';
 // Override via BASE_PATH env var (the deploy workflow sets it from the repo name).
 export default defineConfig({
   base: process.env.BASE_PATH ?? '/',
+  build: { rollupOptions: { input: { lab: 'index.html', factory: 'factory.html' } } },
 });

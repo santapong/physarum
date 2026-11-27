@@ -3,16 +3,16 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="Explore how Physarum polycephalum solves transport networks, microfluidic/soft-robotics vasculature, analog LP optimization, and two-level multi-cell FJSP." />
-    <title>Physarum Pathfinder — 4-Lab Adaptive Network Workbench</title>
+    <meta name="description" content="Explore how Physarum polycephalum solves transport networks, microfluidic/soft-robotics vasculature, analog LP optimization, two-level multi-cell FJSP, multi-hop GraphRAG verification, and distributed systems control-plane routing." />
+    <title>Physarum Pathfinder — 6-Lab Adaptive Network Workbench</title>
   </head>
   <body>
     <main class="app-shell">
       <header class="masthead">
         <div>
-          <p class="eyebrow">Adaptive network laboratory · Tero (2010) · Murray Vascular · Analog LP · Two-Level FJSP</p>
+          <p class="eyebrow">Adaptive network laboratory · Tero (2010) · Murray Vascular · Analog LP · Two-Level FJSP · Multi-Hop GraphRAG · Systems Control-Plane</p>
           <h1>Physarum Pathfinder</h1>
-          <p class="lede">Explore biological network design across four unified labs: transport webs, Murray-law microfluidic &amp; soft-robotics channels, analog Linear Program solvers, and two-level multi-cell jewelry FJSP scheduling.</p>
+          <p class="lede">Explore biological network design across six unified labs: transport webs, Murray-law microfluidic &amp; soft-robotics channels, analog Linear Program solvers, two-level multi-cell jewelry FJSP scheduling, multi-hop GraphRAG verification, and live Systems Control-Plane routing.</p>
         </div>
         <div class="status" aria-live="polite"><span class="status-dot"></span><span id="status-text">Ready</span></div>
       </header>
@@ -22,6 +22,8 @@
         <button type="button" role="tab" data-domain="vascular" aria-selected="false">Vascular &amp; Soft Robotics</button>
         <button type="button" role="tab" data-domain="optimization" aria-selected="false">Optimization &amp; Analog LP</button>
         <button type="button" role="tab" data-domain="fjsp" aria-selected="false">Factory FJSP · Two-Level</button>
+        <button type="button" role="tab" data-domain="graphrag" aria-selected="false">GraphRAG · Multi-Hop Evidence</button>
+        <button type="button" role="tab" data-domain="systems" aria-selected="false">Systems · Control-Plane</button>
       </nav>
 
       <div class="workspace">
@@ -43,6 +45,8 @@
               <button id="export-spice" type="button" hidden>Export SPICE (.cir)</button>
               <button id="export-cpsat" type="button" hidden>Export CP-SAT (.py)</button>
               <button id="export-schedule" type="button" hidden>Export Schedule (.json)</button>
+              <button id="export-graphrag" type="button" hidden>Export Evidence (.json)</button>
+              <button id="export-systems" type="button" hidden>Export Routing (.json)</button>
             </div>
           </div>
 
@@ -83,6 +87,7 @@
                 <strong>Lower-Layer Discrete FJSP Gantt</strong>
                 <span id="fjsp-verify-badge" class="fjsp-badge is-valid">Verified</span>
               </div>
+              <a href="./factory.html" class="factory-plan-link">20-cell plan · Cash flow &amp; materials</a>
               <button id="fjsp-toggle-view" type="button">Show Greedy Baseline</button>
             </div>
             <canvas id="gantt" width="900" height="320" aria-label="Lower-layer multi-cell jewelry FJSP Gantt chart"></canvas>
@@ -94,6 +99,29 @@
               <span><i class="gantt-swatch alloy-setup"></i>Alloy Setup</span>
               <span>↻ Re-entrant Polish</span>
             </div>
+            <p id="plating-usage" class="po-usage"></p>
+            <details class="po-editor">
+              <summary>PO routing &amp; operation times</summary>
+              <form id="po-route-form">
+                <label>Production order <select name="order"></select></label>
+                <p class="po-route-summary"></p>
+                <p>Enter processing minutes per eligible cell. Each row shows its assignment in the displayed schedule.</p>
+                <div class="po-operations"></div>
+                <button type="submit">Apply to schedule</button>
+                <output aria-live="polite"></output>
+              </form>
+            </details>
+            <details class="po-editor" id="wax-molds" hidden open>
+              <summary>Wax mold capacity &amp; service life</summary>
+              <p>Simulated inventory. Each physical mold can run on one wax station at a time. A partial shot uses one cycle.</p>
+              <div class="erp-table-wrap">
+                <table class="erp-table">
+                  <thead><tr><th>Mold</th><th>Pieces / shot</th><th>Pieces ordered</th><th>Shots needed</th><th>Starting shots</th><th>Shots left after batch</th></tr></thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+              <p id="wax-mold-handoff" hidden></p>
+            </details>
           </section>
 
           <section id="erp-panel" class="erp-panel" aria-label="ERP Master Scheduler MRP and Cash Flow" hidden>
@@ -124,6 +152,88 @@
                 <div id="so-summary" class="erp-table-wrap"></div>
               </div>
             </div>
+          </section>
+
+          <section id="graphrag-panel" class="erp-panel" aria-label="Multi-Hop GraphRAG Evidence Verification" hidden>
+            <div class="gantt-header">
+              <div class="gantt-title-row">
+                <strong>Multi-Hop GraphRAG · Physarum vs Personalized PageRank (PPR)</strong>
+              </div>
+              <div class="erp-badges">
+                <span id="graphrag-verdict-badge" class="fjsp-badge is-valid">Ready</span>
+                <span id="graphrag-hub-badge" class="fjsp-badge is-valid">Hub Trap Checked</span>
+              </div>
+            </div>
+            <div class="graphrag-controls">
+              <label class="graphrag-scope-label">
+                Viewer (T04 Scope)
+                <select id="graphrag-viewer">
+                  <option value="buyer">Buyer Lead (All Project Rooms)</option>
+                  <option value="room-siam">Room A · SiamSensor Only</option>
+                  <option value="room-eastern">Room B · Eastern Only</option>
+                </select>
+              </label>
+              <div class="graphrag-actions">
+                <button id="graphrag-cut-t02" type="button">Cut T02 Pack-of-10</button>
+                <button id="graphrag-cut-iso" type="button">Revoke Siam ISO</button>
+                <button id="graphrag-toggle-hub-cap" type="button">Toggle Hub Cap (λ_e)</button>
+                <button id="graphrag-reset" type="button">Reset Evidence</button>
+              </div>
+            </div>
+            <div class="erp-grid">
+              <div class="erp-card">
+                <h3>Candidate Ranking · Physarum Flow vs PPR</h3>
+                <div id="graphrag-ranking-table" class="erp-table-wrap"></div>
+              </div>
+              <div class="erp-card">
+                <h3>Active Cited Evidence &amp; Revoked / T04 Audit Log</h3>
+                <div id="graphrag-evidence-table" class="erp-table-wrap"></div>
+              </div>
+            </div>
+          </section>
+
+          <section id="systems-panel" class="erp-panel" aria-label="Systems Control-Plane Router and Live Conditions" hidden>
+            <div class="gantt-header">
+              <div class="gantt-title-row">
+                <strong>Systems Control-Plane · Backpressure (λ<sub>e</sub>) &amp; Live Condition Builder</strong>
+              </div>
+              <div class="erp-badges">
+                <span id="systems-status-badge" class="fjsp-badge is-valid">0% Drops</span>
+                <span id="systems-baseline-badge" class="fjsp-badge is-valid">vs Static</span>
+              </div>
+            </div>
+            <div id="systems-conditions" class="systems-conditions">
+              <div class="sys-cond-row">
+                <label class="sys-load-field">
+                  <span class="field-line"><span>Global Traffic Surge (Load ×)</span><output id="sys-load-value" for="sys-load">1.00×</output></span>
+                  <input type="range" id="sys-load" min="0.5" max="2.5" step="0.05" value="1" />
+                </label>
+                <div class="sys-quick-btns">
+                  <button id="sys-preset-normal" type="button">1.0× Normal</button>
+                  <button id="sys-preset-surge" type="button">1.8× Surge</button>
+                  <button id="sys-preset-outage" type="button">Kill Primary</button>
+                  <button id="sys-reset-cond" type="button">Reset</button>
+                </div>
+              </div>
+              <div class="sys-cond-grid">
+                <label class="field">Target Route / Rail
+                  <select id="sys-rail-select"></select>
+                </label>
+                <label class="field">
+                  <span class="field-line"><span>Rail Capacity Limit (u<sub>e</sub>)</span><output id="sys-rail-cap-value" for="sys-rail-cap">100%</output></span>
+                  <input type="range" id="sys-rail-cap" min="0.1" max="2.0" step="0.05" value="1" />
+                </label>
+                <label class="field">
+                  <span class="field-line"><span>Extra Cost / Lag / Decline</span><output id="sys-rail-cost-value" for="sys-rail-cost">+0.0×</output></span>
+                  <input type="range" id="sys-rail-cost" min="0" max="3" step="0.1" value="0" />
+                </label>
+                <div class="sys-rail-action">
+                  <button id="sys-rail-cut" type="button">Kill Rail (Cut)</button>
+                </div>
+              </div>
+            </div>
+            <canvas id="syschart" width="900" height="220" aria-label="Live rail utilization and Physarum vs Static router comparison"></canvas>
+            <div id="systems-table" class="erp-table-wrap"></div>
           </section>
         </section>
 
@@ -201,6 +311,7 @@
               <span class="field-line"><span>Steps per frame</span><output id="speed-value" for="speed">8×</output></span>
               <input type="range" id="speed" min="1" max="24" step="1" value="8" />
             </label>
+            <label class="check-item" style="margin-top: 0.65rem;"><input type="checkbox" id="auto-stop" /> Auto-stop when converged</label>
           </section>
 
           <section class="panel">
@@ -308,6 +419,9 @@
             <div class="learn-actions">
               <button type="button" data-demo="fjsp-atelier">Run Two-Level Jewelry Lab</button>
               <button type="button" data-demo="fjsp-100po">Try 100-PO (FG + SG)</button>
+              <button type="button" data-demo="fjsp-300po">Inspect 300 model-routed POs</button>
+              <a class="factory-plan-link" href="./factory.html">Open 20-cell production plan</a>
+              <button type="button" data-demo="fjsp-300po-halo-spare">Test Halo standby mold</button>
               <button type="button" data-demo="fjsp-erp">Try ERP Master Scheduler</button>
             </div>
           </article>
@@ -318,6 +432,27 @@
             <p>Use <strong>Cut Edge</strong> on <code>cast-18k</code> to watch flow shift to <code>cast-flex</code> and rebuild a zero-overlap Gantt, or sever sole Micro-Pavé <code>set-pave</code> to catch genuine infeasibility.</p>
             <div class="learn-actions">
               <button type="button" data-demo="fjsp-disrupt">Test Kiln Disruption</button>
+            </div>
+          </article>
+
+          <article class="learn-card">
+            <h3>9. Multi-Hop GraphRAG &amp; Evidence Verification</h3>
+            <p class="formula">All-Pairs Q<sub>rms</sub> + λ<sub>e</sub> Hub Price + Cut Edge Gap</p>
+            <p>Compare deterministic Multi-Terminal Physarum against Personalized PageRank on Tender-B2B supplier graphs: penalize distributor hub shortcuts with <code>λ_e</code>, revoke documents with <strong>Cut Edge</strong> to detect <code>Needs review</code>, and test T04 room isolation.</p>
+            <div class="learn-actions">
+              <button type="button" data-demo="graphrag-sensors">Run Sensors GraphRAG vs PPR</button>
+              <button type="button" data-demo="graphrag-t02-cut">Cut T02 Pack-of-10</button>
+            </div>
+          </article>
+
+          <article class="learn-card">
+            <h3>10. Systems Control-Plane &amp; Backpressure</h3>
+            <p class="formula">Q<sub>e</sub> / u<sub>e</sub> → λ<sub>e</sub> &nbsp;&nbsp;|&nbsp;&nbsp; c<sub>eff</sub> = c<sub>e</sub>(1 + λ<sub>e</sub>)</p>
+            <p>Route live payment rails, LLM GPU clusters, ETL worker pools, Edge-Pi-Cloud links, Envoy mesh callers, and DB replicas under capacity surges and outages via the interactive Condition Builder.</p>
+            <div class="learn-actions">
+              <button type="button" data-demo="sys-payment">Payment Gateway Failover</button>
+              <button type="button" data-demo="sys-llm-surge">1.8× LLM GPU Surge</button>
+              <button type="button" data-demo="sys-mesh-bp">Envoy DB Backpressure</button>
             </div>
           </article>
         </div>

@@ -1,4 +1,5 @@
 import type { DynamicsMode, FlowMode, GraphMode, LabDomain, Node } from './graph';
+import { readPoEdits, type PoOperationEdit } from './po-routing';
 
 export interface SharedStateV1 {
   version: 1;
@@ -34,6 +35,8 @@ export interface SharedStateV3 {
   seed: number;
   presetId?: string;
   maxRadiusMm?: number;
+  poEdits?: PoOperationEdit[];
+  fjspShiftCap?: boolean;
   capacities?: Array<{ i: number; j: number; capacity: number }>;
 }
 
@@ -64,6 +67,20 @@ export function sanitizeState(candidate: unknown): SharedState | null {
     if (typeof value.label === 'string' && value.label.trim().length > 0) {
       cleanNode.label = value.label.trim().slice(0, 24);
     }
+    if (
+      isV3 &&
+      (value.role === 'query' ||
+        value.role === 'supplier' ||
+        value.role === 'hub' ||
+        value.role === 'evidence' ||
+        value.role === 'private' ||
+        value.role === 'noise')
+    ) {
+      cleanNode.role = value.role;
+    }
+    if (isV3 && typeof value.room === 'string' && value.room.trim().length > 0) {
+      cleanNode.room = value.room.trim().slice(0, 32);
+    }
     nodes.push(cleanNode);
   }
 
@@ -76,7 +93,11 @@ export function sanitizeState(candidate: unknown): SharedState | null {
 
   if (isV3) {
     const domain: LabDomain =
-      raw.domain === 'vascular' || raw.domain === 'optimization' || raw.domain === 'fjsp'
+      raw.domain === 'vascular' ||
+      raw.domain === 'optimization' ||
+      raw.domain === 'fjsp' ||
+      raw.domain === 'graphrag' ||
+      raw.domain === 'systems'
         ? raw.domain
         : 'transport';
     const dynamicsMode: DynamicsMode =
@@ -124,6 +145,11 @@ export function sanitizeState(candidate: unknown): SharedState | null {
         }
       }
       if (caps.length > 0) stateV3.capacities = caps;
+    }
+    if (domain === 'fjsp') {
+      if (typeof raw.fjspShiftCap === 'boolean') stateV3.fjspShiftCap = raw.fjspShiftCap;
+      const edits = readPoEdits(raw.poEdits);
+      if (edits.length) stateV3.poEdits = edits;
     }
     return stateV3;
   }

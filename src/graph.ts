@@ -1,9 +1,13 @@
+export type NodeRole = 'query' | 'supplier' | 'hub' | 'evidence' | 'private' | 'noise';
+
 export interface Node {
   id: number;
   x: number;
   y: number;
   flow: number;
   label?: string;
+  role?: NodeRole;
+  room?: string;
 }
 
 export interface Edge {
@@ -18,6 +22,11 @@ export interface Edge {
   congestion?: number;
   cellId?: string;
   stage?: string;
+  relation?: string;
+  evidenceRef?: string;
+  room?: string;
+  expired?: boolean;
+  scopeBlocked?: boolean;
 }
 
 export interface ExplicitEdgeSpec {
@@ -27,6 +36,10 @@ export interface ExplicitEdgeSpec {
   capacity?: number;
   cellId?: string;
   stage?: string;
+  relation?: string;
+  evidenceRef?: string;
+  room?: string;
+  expired?: boolean;
 }
 
 export interface Graph {
@@ -37,7 +50,7 @@ export interface Graph {
 
 export type GraphMode = 'complete' | 'delaunay' | 'explicit';
 export type FlowMode = 'source-sink' | 'multi-terminal';
-export type LabDomain = 'transport' | 'vascular' | 'optimization' | 'fjsp';
+export type LabDomain = 'transport' | 'vascular' | 'optimization' | 'fjsp' | 'graphrag' | 'systems';
 export type DynamicsMode = 'tero' | 'murray' | 'linear-lp';
 
 function initialD(random: () => number): number {
@@ -219,14 +232,15 @@ export function buildExplicitGraph(
     const dy = graph.nodes[a].y - graph.nodes[b].y;
     const length = Math.max(Math.hypot(dx, dy), 1e-6);
     const idx = graph.edges.length;
+    const isExpired = Boolean(spec.expired);
     const edge: Edge = {
       i: a,
       j: b,
       length,
-      D: initialD(random),
+      D: isExpired ? 0 : initialD(random),
       costFactor: Math.max(spec.costFactor ?? 1, 0.1),
       flow: 0,
-      severed: false,
+      severed: isExpired,
       congestion: 0,
     };
     if (spec.capacity !== undefined && Number.isFinite(spec.capacity) && spec.capacity > 0) {
@@ -234,6 +248,10 @@ export function buildExplicitGraph(
     }
     if (spec.cellId) edge.cellId = spec.cellId;
     if (spec.stage) edge.stage = spec.stage;
+    if (spec.relation) edge.relation = spec.relation;
+    if (spec.evidenceRef) edge.evidenceRef = spec.evidenceRef;
+    if (spec.room) edge.room = spec.room;
+    if (isExpired) edge.expired = true;
     graph.edges.push(edge);
     graph.adj[a].push(idx);
     graph.adj[b].push(idx);
@@ -257,6 +275,10 @@ export function rebuildGraph(
         capacity: e.capacity,
         cellId: e.cellId,
         stage: e.stage,
+        relation: e.relation,
+        evidenceRef: e.evidenceRef,
+        room: e.room,
+        expired: e.expired,
       }));
     return buildExplicitGraph(graph.nodes, specs, random);
   }
@@ -346,7 +368,7 @@ function findNearestEdgeIndex(
   let bestDist = maxDistPx;
   for (let idx = 0; idx < graph.edges.length; idx++) {
     const edge = graph.edges[idx];
-    if (edge.severed || edge.D <= minD) continue;
+    if (edge.severed || edge.scopeBlocked || edge.D <= minD) continue;
     const a = graph.nodes[edge.i];
     const b = graph.nodes[edge.j];
     const d = pointToSegmentDistance(x, y, a.x, a.y, b.x, b.y);

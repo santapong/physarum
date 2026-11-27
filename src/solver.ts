@@ -135,7 +135,7 @@ export function normalizedNodeFlows(graph: Graph): number[] {
 }
 
 function edgeConductance(edge: Graph['edges'][number]): number {
-  if (edge.severed || edge.D <= 1e-12) return 0;
+  if (edge.severed || edge.scopeBlocked || edge.D <= 1e-12) return 0;
   const congestionScale = 1 + Math.max(edge.congestion ?? 0, 0);
   return edge.D / (effectiveEdgeCost(edge) * congestionScale);
 }

@@ -1,4 +1,13 @@
-import type { DynamicsMode, ExplicitEdgeSpec, FlowMode, GraphMode, LabDomain, Node } from './graph';
+import type {
+  DynamicsMode,
+  ExplicitEdgeSpec,
+  FlowMode,
+  GraphMode,
+  LabDomain,
+  Node,
+  NodeRole,
+} from './graph';
+import { SYSTEMS_SCENARIOS } from './systems';
 
 export interface EdgeCapacitySpec {
   i: number;
@@ -25,6 +34,135 @@ export interface Preset {
 
 const node = (id: number, x: number, y: number, flow = 0, label?: string): Node =>
   label ? { id, x, y, flow, label } : { id, x, y, flow };
+
+const ragNode = (
+  id: number,
+  x: number,
+  y: number,
+  flow: number,
+  label: string,
+  role: NodeRole,
+  room?: string,
+): Node => (room ? { id, x, y, flow, label, role, room } : { id, x, y, flow, label, role });
+
+function buildTenderSensorsGraphRag(): { nodes: Node[]; explicitEdges: ExplicitEdgeSpec[] } {
+  const nodes: Node[] = [
+    ragNode(0, 95, 105, 1, 'Q1 Spec IP67', 'query'),
+    ragNode(1, 95, 235, 1, 'Q2 Pack 2×10', 'query'),
+    ragNode(2, 95, 365, 1, 'Q3 ISO/Cal', 'query'),
+    ragNode(3, 95, 495, 1, 'Q4 TH ≤10d', 'query'),
+    ragNode(4, 310, 95, 0, 'PDF-A 2×10', 'evidence'),
+    ragNode(5, 310, 185, 0, 'ISO-Siam', 'evidence'),
+    ragNode(6, 310, 410, 0, 'PDF-B OCR', 'evidence'),
+    ragNode(7, 310, 485, 0, 'ISO-East', 'evidence'),
+    ragNode(8, 310, 560, 0, 'Apex-Cert EXP', 'evidence'),
+    ragNode(9, 445, 52, 0, 'RoomA Margin', 'private', 'room-siam'),
+    ragNode(10, 575, 130, 0, 'SiamSensor OEM', 'supplier'),
+    ragNode(11, 575, 445, 0, 'Eastern Offer B', 'supplier'),
+    ragNode(12, 460, 295, 0, 'MegaTrade Hub', 'hub'),
+    ragNode(13, 575, 560, 0, 'Apex Expired', 'supplier'),
+    ragNode(14, 740, 195, 0, 'Cat-BrandX', 'noise'),
+    ragNode(15, 830, 235, 0, 'Cat-BrandY', 'noise'),
+    ragNode(16, 745, 280, 0, 'Cat-PLC', 'noise'),
+    ragNode(17, 835, 325, 0, 'Cat-Valve', 'noise'),
+    ragNode(18, 745, 370, 0, 'Cat-Relay', 'noise'),
+    ragNode(19, 830, 415, 0, 'Cat-Alias', 'noise'),
+  ];
+
+  const explicitEdges: ExplicitEdgeSpec[] = [
+    // SiamSensor OEM (Offer A) + T04 Room A private evidence
+    { i: 0, j: 4, costFactor: 1.0, relation: 'Quotes Offer A', evidenceRef: 'quote-a-v1:p1:row2' },
+    { i: 1, j: 4, costFactor: 1.0, relation: 'T02 Pack-of-10', evidenceRef: 'quote-a-v1:p1:row3' },
+    { i: 4, j: 10, costFactor: 1.0, relation: 'Manufactures OEM', evidenceRef: 'quote-a-v1:p1:header' },
+    { i: 2, j: 5, costFactor: 1.0, relation: 'ISO 9001:2015', evidenceRef: 'cert-siam-v2:p1:row1' },
+    { i: 5, j: 10, costFactor: 1.0, relation: 'Cert Holder', evidenceRef: 'cert-siam-v2:p1:holder' },
+    { i: 3, j: 10, costFactor: 1.0, relation: '7d Rayong OEM', evidenceRef: 'quote-a-v1:p1:row7' },
+    {
+      i: 0,
+      j: 9,
+      costFactor: 1.0,
+      relation: 'Room A Private Margin',
+      evidenceRef: 'room-siam:margin-v1:p1:row2',
+      room: 'room-siam',
+    },
+    {
+      i: 9,
+      j: 10,
+      costFactor: 1.0,
+      relation: 'Room A Private Margin',
+      evidenceRef: 'room-siam:margin-v1:p1:row4',
+      room: 'room-siam',
+    },
+
+    // MegaTrade Hub (Cap Edge bottleneck = 0.10) + 6 noisy catalog satellites
+    { i: 0, j: 12, costFactor: 1.0, capacity: 0.10, relation: 'Reseller Catalog', evidenceRef: 'catalog-mega-2026:p14' },
+    { i: 1, j: 12, costFactor: 1.0, capacity: 0.10, relation: 'Reseller Catalog', evidenceRef: 'catalog-mega-2026:p14' },
+    { i: 2, j: 12, costFactor: 1.0, capacity: 0.10, relation: 'Reseller Catalog', evidenceRef: 'catalog-mega-2026:p14' },
+    { i: 3, j: 12, costFactor: 1.0, capacity: 0.10, relation: 'Reseller Catalog', evidenceRef: 'catalog-mega-2026:p14' },
+    { i: 12, j: 14, costFactor: 1.0, relation: 'Brand Noise', evidenceRef: 'dir-scrape:tag-0' },
+    { i: 12, j: 15, costFactor: 1.0, relation: 'Brand Noise', evidenceRef: 'dir-scrape:tag-1' },
+    { i: 12, j: 16, costFactor: 1.0, relation: 'Brand Noise', evidenceRef: 'dir-scrape:tag-2' },
+    { i: 12, j: 17, costFactor: 1.0, relation: 'Brand Noise', evidenceRef: 'dir-scrape:tag-3' },
+    { i: 12, j: 18, costFactor: 1.0, relation: 'Brand Noise', evidenceRef: 'dir-scrape:tag-4' },
+    { i: 12, j: 19, costFactor: 1.0, relation: 'Brand Noise', evidenceRef: 'dir-scrape:tag-5' },
+    { i: 14, j: 15, costFactor: 1.0, relation: 'Brand Noise', evidenceRef: 'dir-scrape:cluster-0' },
+    { i: 15, j: 16, costFactor: 1.0, relation: 'Brand Noise', evidenceRef: 'dir-scrape:cluster-1' },
+    { i: 16, j: 17, costFactor: 1.0, relation: 'Brand Noise', evidenceRef: 'dir-scrape:cluster-2' },
+    { i: 17, j: 18, costFactor: 1.0, relation: 'Brand Noise', evidenceRef: 'dir-scrape:cluster-3' },
+    { i: 18, j: 19, costFactor: 1.0, relation: 'Brand Noise', evidenceRef: 'dir-scrape:cluster-4' },
+
+    // Eastern Offer B (OCR scanned backup)
+    { i: 0, j: 6, costFactor: 1.15, relation: 'OCR Quote B', evidenceRef: 'quote-b-v1:p1:row2' },
+    { i: 1, j: 6, costFactor: 1.15, relation: 'OCR 20 pcs Pack', evidenceRef: 'quote-b-v1:p1:row4' },
+    { i: 6, j: 11, costFactor: 1.15, relation: 'Authorized Importer', evidenceRef: 'quote-b-v1:p1:header' },
+    { i: 2, j: 7, costFactor: 1.15, relation: 'ISO 9001:2015', evidenceRef: 'cert-east-v1:p1:row1' },
+    { i: 7, j: 11, costFactor: 1.15, relation: 'Cert Holder', evidenceRef: 'cert-east-v1:p1:holder' },
+    { i: 3, j: 11, costFactor: 1.15, relation: '10d Chonburi WH', evidenceRef: 'quote-b-v1:p1:row8' },
+
+    // Apex Expired (unverified quote + expired ISO cert)
+    { i: 0, j: 13, costFactor: 2.2, relation: 'Quote Apex ฿9,800', evidenceRef: 'quote-apex-v1:p1:row1' },
+    { i: 1, j: 13, costFactor: 2.2, relation: 'Pack 20 pcs', evidenceRef: 'quote-apex-v1:p1:row2' },
+    { i: 3, j: 13, costFactor: 2.2, relation: '9d Dispatch', evidenceRef: 'quote-apex-v1:p1:row5' },
+    { i: 2, j: 8, costFactor: 1.0, relation: 'ISO Expired 2025', evidenceRef: 'cert-apex-2024:EXPIRED', expired: true },
+    { i: 8, j: 13, costFactor: 1.0, relation: 'ISO Expired 2025', evidenceRef: 'cert-apex-2024:EXPIRED', expired: true },
+  ];
+
+  return { nodes, explicitEdges };
+}
+
+function buildSalonGapGraphRag(): { nodes: Node[]; explicitEdges: ExplicitEdgeSpec[] } {
+  const nodes: Node[] = [
+    ragNode(0, 95, 110, 1, 'Q1 Booking API', 'query'),
+    ragNode(1, 95, 240, 1, 'Q2 Tablet T1', 'query'),
+    ragNode(2, 95, 370, 1, 'Q3 On-site Install', 'query'),
+    ragNode(3, 95, 500, 1, 'Q4 6-Week Target', 'query'),
+    ragNode(4, 330, 120, 0, 'Doc-Booking-Dao', 'evidence'),
+    ragNode(5, 330, 240, 0, 'Doc-T1-Kit', 'evidence'),
+    ragNode(6, 330, 370, 0, 'Doc-Install-A', 'evidence'),
+    ragNode(7, 640, 370, 0, 'Offer A Bundle', 'supplier'),
+    ragNode(8, 640, 140, 0, 'Dao Software (B)', 'supplier'),
+    ragNode(9, 640, 255, 0, 'Kit Hardware', 'supplier'),
+  ];
+
+  const explicitEdges: ExplicitEdgeSpec[] = [
+    { i: 0, j: 7, costFactor: 1.2, relation: 'Bundle Booking', evidenceRef: 'offer-a-v1:p1:row1' },
+    { i: 1, j: 7, costFactor: 1.2, relation: 'Bundle Tablet', evidenceRef: 'offer-a-v1:p1:row2' },
+    { i: 2, j: 6, costFactor: 1.0, relation: 'On-Site Install', evidenceRef: 'offer-a-v1:p2:row4' },
+    { i: 6, j: 7, costFactor: 1.0, relation: 'Field Technician', evidenceRef: 'offer-a-v1:p2:row5' },
+    { i: 3, j: 7, costFactor: 1.2, relation: '6-Week Delivery', evidenceRef: 'offer-a-v1:p2:row8' },
+    { i: 0, j: 4, costFactor: 1.0, relation: 'Booking Sync', evidenceRef: 'offer-b-v1:p1:row1' },
+    { i: 4, j: 8, costFactor: 1.0, relation: 'Dao Software Co.', evidenceRef: 'offer-b-v1:p1:header' },
+    { i: 3, j: 8, costFactor: 1.0, relation: 'Week 5 Ready', evidenceRef: 'offer-b-v1:p1:row6' },
+    { i: 1, j: 5, costFactor: 1.0, relation: 'Model T1 Spec', evidenceRef: 'kit-v1:p1:row1' },
+    { i: 5, j: 9, costFactor: 1.0, relation: 'Kit Tablet Vendor', evidenceRef: 'kit-v1:p1:header' },
+    { i: 3, j: 9, costFactor: 1.0, relation: 'Wed Week 5 ETA', evidenceRef: 'kit-v1:p1:row4' },
+  ];
+
+  return { nodes, explicitEdges };
+}
+
+const TENDER_SENSORS_LAYOUT = buildTenderSensorsGraphRag();
+const SALON_GAP_LAYOUT = buildSalonGapGraphRag();
 
 function buildJewelryFactoryLayout(options: {
   cast18kCap: number;
@@ -182,6 +320,13 @@ function buildFgSgFactoryLayout(): { nodes: Node[]; explicitEdges: ExplicitEdgeS
 
 const JEWELRY_100PO_LAYOUT = buildFgSgFactoryLayout();
 
+// On-hand cast blanks enter either filing bench before following their finishing route.
+const JEWELRY_300PO_EDGES: ExplicitEdgeSpec[] = [
+  ...JEWELRY_100PO_LAYOUT.explicitEdges,
+  { i: 29, j: 11, costFactor: 1.0 },
+  { i: 29, j: 13, costFactor: 1.15 },
+];
+
 function buildErpFactoryLayout(): { nodes: Node[]; explicitEdges: ExplicitEdgeSpec[] } {
   const nodes: Node[] = [
     node(0, 36, 300, 0.8, 'Raw Intake'),
@@ -314,6 +459,20 @@ function buildErpFactoryLayout(): { nodes: Node[]; explicitEdges: ExplicitEdgeSp
 }
 
 const JEWELRY_ERP_LAYOUT = buildErpFactoryLayout();
+
+const MIXED_FACTORY: Preset = {
+  id: 'fjsp-jewelry-300po',
+  name: '300-PO Factory · Model-specific routes',
+  description: 'Six model routes with PO-specific operation times, from filing and polishing cast blanks to full pavé production.',
+  domain: 'fjsp',
+  mode: 'explicit',
+  flowMode: 'source-sink',
+  dynamicsMode: 'linear-lp',
+  mu: 1.0,
+  seed: 5105,
+  nodes: JEWELRY_100PO_LAYOUT.nodes,
+  explicitEdges: JEWELRY_300PO_EDGES,
+};
 
 export const PRESETS: Preset[] = [
   {
@@ -755,6 +914,13 @@ export const PRESETS: Preset[] = [
     nodes: JEWELRY_100PO_LAYOUT.nodes,
     explicitEdges: JEWELRY_100PO_LAYOUT.explicitEdges,
   },
+  MIXED_FACTORY,
+  {
+    ...MIXED_FACTORY,
+    id: 'fjsp-jewelry-300po-halo-spare',
+    name: '300-PO Factory · Halo standby mold',
+    description: 'Same orders with two compatible Halo molds. The primary has 90 shots and its standby has 60.',
+  },
   {
     id: 'fjsp-jewelry-erp',
     name: 'ERP Master Scheduler · SO→PO + MRP + Cash Flow',
@@ -768,6 +934,45 @@ export const PRESETS: Preset[] = [
     nodes: JEWELRY_ERP_LAYOUT.nodes,
     explicitEdges: JEWELRY_ERP_LAYOUT.explicitEdges,
   },
+  {
+    id: 'graphrag-tender-sensors',
+    name: 'Tender-B2B · Industrial Sensors (20 pcs)',
+    description: 'Multi-hop supplier verification: SiamSensor OEM vs capped MegaTrade Hub (λ_e) vs OCR backup vs expired cert & T04 room isolation.',
+    domain: 'graphrag',
+    mode: 'explicit',
+    flowMode: 'multi-terminal',
+    dynamicsMode: 'linear-lp',
+    mu: 1.0,
+    seed: 6101,
+    nodes: TENDER_SENSORS_LAYOUT.nodes,
+    explicitEdges: TENDER_SENSORS_LAYOUT.explicitEdges,
+  },
+  {
+    id: 'graphrag-salon-gap',
+    name: 'Tender-B2B · Salon Check-in (B1/C5 Gap)',
+    description: 'Split-scope coverage check: cut Doc-Install-A to trigger a global Needs review gap when no vendor owns on-site installation.',
+    domain: 'graphrag',
+    mode: 'explicit',
+    flowMode: 'multi-terminal',
+    dynamicsMode: 'linear-lp',
+    mu: 1.0,
+    seed: 6102,
+    nodes: SALON_GAP_LAYOUT.nodes,
+    explicitEdges: SALON_GAP_LAYOUT.explicitEdges,
+  },
+  ...SYSTEMS_SCENARIOS.map((spec, idx) => ({
+    id: spec.id,
+    name: spec.name,
+    description: spec.description,
+    domain: 'systems' as const,
+    mode: 'explicit' as const,
+    flowMode: 'source-sink' as const,
+    dynamicsMode: 'linear-lp' as const,
+    mu: 1.0,
+    seed: 7101 + idx,
+    nodes: spec.nodes,
+    explicitEdges: spec.explicitEdges,
+  })),
 ];
 
 export function getPreset(id: string): Preset {

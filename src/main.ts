@@ -9,6 +9,7 @@ import {
   solveTwoLevelFjsp,
   type CellSpec,
   type JewelryJobSpec,
+  type JewelryOpSpec,
   type TwoLevelComparison,
 } from './fjsp';
 import {
@@ -30,6 +31,13 @@ import {
   type LabDomain,
   type Node,
 } from './graph';
+import {
+  applyViewerScope,
+  evaluateGraphRag,
+  exportGraphRagJson,
+  type GraphRagEvaluation,
+  type GraphRagViewerScope,
+} from './graphrag';
 import { computeNetworkMetrics, type NetworkMetrics } from './metrics';
 import {
   buildErpJewelryScenario,
@@ -44,12 +52,31 @@ import {
   type ExactFlowSolution,
   type OptimizationMetrics,
 } from './optimize';
+import { bindPoEditor } from './po-editor';
+import { editableRoute, scheduledRoute, type PoOperationEdit } from './po-routing';
 import { PRESETS, getPreset, type EdgeCapacitySpec } from './presets';
 import { createRandom, normalizeSeed } from './random';
-import { render, renderCashFlowChart, renderCrossbarMatrix, renderGanttChart } from './render';
+import {
+  render,
+  renderCashFlowChart,
+  renderCrossbarMatrix,
+  renderGanttChart,
+  renderSystemsComparisonChart,
+} from './render';
 import { step, type StepMetrics } from './sim';
 import { effectiveEdgeCost } from './solver';
 import { encodeState, stateFromHash, type SharedState } from './state';
+import {
+  SYSTEMS_SCENARIOS,
+  applySystemsConditions,
+  createDefaultSystemsConditions,
+  evaluateSystemsScenario,
+  exportSystemsJson,
+  getSystemsScenario,
+  type SystemsConditions,
+  type SystemsEvaluation,
+  type SystemsScenarioSpec,
+} from './systems';
 import {
   applyTerrainToGraph,
   clearTerrain,
@@ -81,6 +108,10 @@ interface HistorySample {
   optimalityGapPct: number;
   fjspMakespan: number;
   fjspMaxLambda: number;
+  graphRagTopShare: number;
+  graphRagNoisePruned: number;
+  sysDropPct: number;
+  sysMaxLambda: number;
 }
 
 const element = <T extends HTMLElement>(id: string): T => {
@@ -102,6 +133,8 @@ const ganttCanvas = element<HTMLCanvasElement>('gantt');
 const ganttContext = ganttCanvas.getContext('2d');
 const cashflowCanvas = element<HTMLCanvasElement>('cashflow');
 const cashflowContext = cashflowCanvas.getContext('2d');
+const sysChartCanvas = element<HTMLCanvasElement>('syschart');
+const sysChartContext = sysChartCanvas.getContext('2d');
 
 const runBtn = element<HTMLButtonElement>('run');
 const stepBtn = element<HTMLButtonElement>('step');
@@ -115,12 +148,15 @@ const exportScadBtn = element<HTMLButtonElement>('export-scad');
 const exportSpiceBtn = element<HTMLButtonElement>('export-spice');
 const exportCpsatBtn = element<HTMLButtonElement>('export-cpsat');
 const exportScheduleBtn = element<HTMLButtonElement>('export-schedule');
+const exportGraphRagBtn = element<HTMLButtonElement>('export-graphrag');
+const exportSystemsBtn = element<HTMLButtonElement>('export-systems');
 const randomSeedBtn = element<HTMLButtonElement>('random-seed');
 const clearObstaclesBtn = element<HTMLButtonElement>('clear-obstacles');
 
 const muInput = element<HTMLInputElement>('mu');
 const dtInput = element<HTMLInputElement>('dt');
 const speedInput = element<HTMLInputElement>('speed');
+const autoStopInput = element<HTMLInputElement>('auto-stop');
 const seedInput = element<HTMLInputElement>('seed');
 const maxRadiusInput = element<HTMLInputElement>('max-radius');
 const maxRadiusField = element<HTMLElement>('max-radius-field');
@@ -158,6 +194,32 @@ const mrpSummary = element<HTMLElement>('mrp-summary');
 const soSummary = element<HTMLElement>('so-summary');
 const fjspShiftRow = element<HTMLElement>('fjsp-shift-row');
 const fjspShiftCapInput = element<HTMLInputElement>('fjsp-shift-cap');
+const graphragPanel = element<HTMLElement>('graphrag-panel');
+const graphragVerdictBadge = element<HTMLElement>('graphrag-verdict-badge');
+const graphragHubBadge = element<HTMLElement>('graphrag-hub-badge');
+const graphragViewerSelect = element<HTMLSelectElement>('graphrag-viewer');
+const graphragCutT02Btn = element<HTMLButtonElement>('graphrag-cut-t02');
+const graphragCutIsoBtn = element<HTMLButtonElement>('graphrag-cut-iso');
+const graphragToggleHubCapBtn = element<HTMLButtonElement>('graphrag-toggle-hub-cap');
+const graphragResetBtn = element<HTMLButtonElement>('graphrag-reset');
+const graphragRankingTable = element<HTMLElement>('graphrag-ranking-table');
+const graphragEvidenceTable = element<HTMLElement>('graphrag-evidence-table');
+const systemsPanel = element<HTMLElement>('systems-panel');
+const systemsStatusBadge = element<HTMLElement>('systems-status-badge');
+const systemsBaselineBadge = element<HTMLElement>('systems-baseline-badge');
+const sysLoadInput = element<HTMLInputElement>('sys-load');
+const sysLoadValue = element<HTMLOutputElement>('sys-load-value');
+const sysPresetNormalBtn = element<HTMLButtonElement>('sys-preset-normal');
+const sysPresetSurgeBtn = element<HTMLButtonElement>('sys-preset-surge');
+const sysPresetOutageBtn = element<HTMLButtonElement>('sys-preset-outage');
+const sysResetCondBtn = element<HTMLButtonElement>('sys-reset-cond');
+const sysRailSelect = element<HTMLSelectElement>('sys-rail-select');
+const sysRailCapInput = element<HTMLInputElement>('sys-rail-cap');
+const sysRailCapValue = element<HTMLOutputElement>('sys-rail-cap-value');
+const sysRailCostInput = element<HTMLInputElement>('sys-rail-cost');
+const sysRailCostValue = element<HTMLOutputElement>('sys-rail-cost-value');
+const sysRailCutBtn = element<HTMLButtonElement>('sys-rail-cut');
+const systemsTable = element<HTMLElement>('systems-table');
 
 const metric1Label = element<HTMLElement>('metric-1-label');
 const metric2Label = element<HTMLElement>('metric-2-label');
@@ -201,11 +263,22 @@ let terrain: TerrainField = createTerrain();
 let activeCapacities: EdgeCapacitySpec[] = [];
 let activeExplicitSpecs: ExplicitEdgeSpec[] = [];
 let activeFjspJobs: JewelryJobSpec[] = getJewelryJobsForPreset('fjsp-jewelry-atelier');
+let baseFjspJobs = activeFjspJobs;
+let poEdits: PoOperationEdit[] = [];
+let platingTemplate: JewelryOpSpec;
 let activeFjspCells: CellSpec[] = JEWELRY_CELLS;
 let activeErpScenario: ErpScenario | null = null;
 let lastErpComparison: ErpComparison | null = null;
 let fjspShiftCapEnabled = false;
 let lastRenderedErpSignature = '';
+let graphRagViewerScope: GraphRagViewerScope = 'buyer';
+let lastGraphRagEval: GraphRagEvaluation | null = null;
+let lastRenderedGraphRagSig = '';
+let autoStopOnConverge = false;
+let activeSystemsSpec: SystemsScenarioSpec | null = null;
+let systemsConditions: SystemsConditions | null = null;
+let lastSystemsEval: SystemsEvaluation | null = null;
+let lastRenderedSystemsSig = '';
 let simRandom = createRandom(seed);
 let iteration = 0;
 let lastStepMetrics: StepMetrics = {
@@ -222,6 +295,7 @@ let lastVascularMetrics: VascularMetrics = computeVascularMetrics(graph, [], { m
 let lastOptMetrics: OptimizationMetrics = computeOptimizationMetrics(graph, []);
 let lastFjspComparison: TwoLevelComparison | null = null;
 let lastFjspSolveIter = -1;
+let lastFjspSolveAt = 0;
 let historySamples: HistorySample[] = [];
 let hoveredEdgeIndex: number | null = null;
 let paintingPointer = false;
@@ -231,6 +305,56 @@ let lastFrameTs = performance.now();
 let fpsAverage = 0;
 let mapImage: HTMLImageElement | null = null;
 let mapObjectUrl: string | null = null;
+
+const poEditor = bindPoEditor(element<HTMLFormElement>('po-route-form'), edits => {
+  applyPoEdits(edits);
+  lastRenderedErpSignature = '';
+  recomputeFjsp(true);
+  recordNetworkSnapshot();
+  draw();
+  updateStats(fpsAverage);
+});
+
+function applyPoEdits(edits: PoOperationEdit[]): void {
+  poEdits = edits;
+  activeFjspJobs = baseFjspJobs.map(job => {
+    const changes = edits.filter(edit => edit.jobId === job.id);
+    return changes.length ? { ...job, ops: scheduledRoute(editableRoute(job, platingTemplate, changes)) } : job;
+  });
+  if (activeErpScenario) activeErpScenario.jobs = activeFjspJobs;
+}
+
+function updatePoAssignments(): void {
+  const solution = showGreedyGantt ? lastFjspComparison?.greedyBaseline : lastFjspComparison?.twoLevel;
+  poEditor.showSchedule(solution, lastFjspComparison?.offlineCells ?? []);
+  const moldPanel = element<HTMLDetailsElement>('wax-molds');
+  const usage = solution?.waxMolds ?? lastFjspComparison?.waxMolds ?? [];
+  moldPanel.hidden = usage.length === 0;
+  const handoff = element<HTMLElement>('wax-mold-handoff');
+  const standbyIds = new Set<string>();
+  for (const job of activeFjspJobs) {
+    for (const op of job.ops) {
+      if (op.waxMold?.spare) standbyIds.add(op.waxMold.spare.id);
+    }
+  }
+  const firstSpare = standbyIds.size
+    ? solution?.ops.find(op => op.moldDraws?.some(draw => standbyIds.has(draw.moldId)))
+    : undefined;
+  handoff.hidden = !firstSpare;
+  if (firstSpare) {
+    const allocation = firstSpare.moldDraws!.map(draw => `${draw.moldId}: ${draw.shots} shots`).join(', ');
+    handoff.textContent = `First standby use · ${firstSpare.jobId} · ${allocation}. Zero changeover time in this trial.`;
+  }
+  const body = moldPanel.querySelector('tbody')!;
+  body.replaceChildren(...usage.map(mold => {
+    const row = document.createElement('tr');
+    for (const value of [mold.id, mold.cavities, mold.pieces, mold.requiredShots,
+      mold.remainingShots, mold.remainingShots - mold.requiredShots]) {
+      row.insertCell().textContent = String(value);
+    }
+    return row;
+  }));
+}
 
 function invalidateExactCache(): void {
   cachedExactSolution = null;
@@ -265,6 +389,9 @@ function buildGraph(nodes: Node[]): Graph {
   if (mode !== 'explicit' || activeCapacities.length > 0) {
     applyCapacitiesToGraph(built, activeCapacities);
   }
+  if (domain === 'systems' && activeSystemsSpec && systemsConditions) {
+    applySystemsConditions(built, activeSystemsSpec, systemsConditions);
+  }
   invalidateExactCache();
   return built;
 }
@@ -276,11 +403,13 @@ function recomputeFjsp(force = false): void {
     lastFjspSolveIter = -1;
     return;
   }
+  const largeLiveBatch = running && activeFjspJobs.length >= 300;
+  if (!force && lastFjspComparison && largeLiveBatch && performance.now() - lastFjspSolveAt < 3000) return;
   const interval = activeFjspJobs.length > 25 ? 48 : 16;
   if (!force && lastFjspComparison && iteration - lastFjspSolveIter < interval) return;
   lastFjspComparison = solveTwoLevelFjsp(graph, activeFjspJobs, {
     physarumWeight: fjspGuidanceWeight,
-    refine: true,
+    refine: force || !largeLiveBatch,
     shiftMinPerDay: fjspShiftCapEnabled ? SHIFT_MIN_PER_DAY : 0,
     cells: activeFjspCells,
   });
@@ -289,6 +418,8 @@ function recomputeFjsp(force = false): void {
       ? evaluateErpComparison(activeErpScenario, lastFjspComparison)
       : null;
   lastFjspSolveIter = iteration;
+  lastFjspSolveAt = performance.now();
+  updatePoAssignments();
 }
 
 function setRunning(next: boolean): void {
@@ -309,19 +440,27 @@ function syncDomainUi(): void {
   const isVascular = domain === 'vascular';
   const isOptimization = domain === 'optimization';
   const isFjsp = domain === 'fjsp';
+  const isGraphRag = domain === 'graphrag';
+  const isSystems = domain === 'systems';
   exportSvgBtn.hidden = !isVascular;
   exportScadBtn.hidden = !isVascular;
   exportSpiceBtn.hidden = !isOptimization;
   exportCpsatBtn.hidden = !isFjsp;
   exportScheduleBtn.hidden = !isFjsp;
+  exportGraphRagBtn.hidden = !isGraphRag;
+  exportSystemsBtn.hidden = !isSystems;
   ganttSection.hidden = !isFjsp;
   erpPanel.hidden = !(isFjsp && activeErpScenario !== null);
+  graphragPanel.hidden = !isGraphRag;
+  systemsPanel.hidden = !isSystems;
   maxRadiusField.hidden = !isVascular && dynamicsMode !== 'murray';
   fjspWeightField.hidden = !isFjsp;
   fjspShiftRow.hidden = !isFjsp;
   showShearRow.hidden = !isVascular && dynamicsMode !== 'murray';
-  showOptRow.hidden = !isOptimization && !isFjsp && dynamicsMode !== 'linear-lp';
-  showCapsRow.hidden = !isOptimization && !isFjsp && dynamicsMode !== 'linear-lp';
+  showOptRow.hidden =
+    !isOptimization && !isFjsp && !isGraphRag && !isSystems && dynamicsMode !== 'linear-lp';
+  showCapsRow.hidden =
+    !isOptimization && !isFjsp && !isGraphRag && !isSystems && dynamicsMode !== 'linear-lp';
   crossbarPanel.hidden = !isOptimization;
 
   if (isVascular) {
@@ -342,6 +481,20 @@ function syncDomainUi(): void {
     metric3Label.textContent = 'Upper Bottleneck (λ_e)';
     metric4Label.textContent = 'Offline Cells · Verified';
     sparkLegend.innerHTML = 'History (<span class="legend-tl">Makespan</span> · <span class="legend-ft">Max λ</span>)';
+  } else if (isGraphRag) {
+    metric1Label.textContent = 'Top Winner · Verdict';
+    metric2Label.textContent = 'PPR Baseline vs Trap';
+    metric3Label.textContent = 'Hub Shadow Price (λ_e)';
+    metric4Label.textContent = 'Noise Pruned · T04 Hidden';
+    sparkLegend.innerHTML = 'History (<span class="legend-tl">Top Share</span> · <span class="legend-ft">Noise Pruned</span>)';
+  } else if (isSystems) {
+    const costLabel = activeSystemsSpec?.costMetricLabel ?? 'Unit Cost';
+    const succLabel = activeSystemsSpec?.successMetricLabel ?? 'Success';
+    metric1Label.textContent = `${costLabel} (Phy vs Static)`;
+    metric2Label.textContent = 'Overload / Drop (Phy vs Static)';
+    metric3Label.textContent = `${succLabel} · Max λ_e`;
+    metric4Label.textContent = 'Demand · Active Rails';
+    sparkLegend.innerHTML = 'History (<span class="legend-tl">Drop%</span> · <span class="legend-ft">Max λ</span>)';
   } else {
     metric1Label.textContent = 'Cost (TL / MST)';
     metric2Label.textContent = 'Efficiency (MD)';
@@ -373,8 +526,9 @@ function statusLabel(): string {
   if (!hasActiveTerminals(graph, flowMode)) {
     return flowMode === 'multi-terminal' ? 'Add ≥ 2 terminals' : 'Add a source and a sink';
   }
-  if (running) return lastStepMetrics.maxChange < 1e-5 ? 'Converged' : 'Adapting';
-  if (iteration > 0 && lastStepMetrics.maxChange < 1e-5) return 'Converged';
+  const convergedNow = iteration >= 30 && lastStepMetrics.maxChange < 5e-5;
+  if (running) return convergedNow ? 'Converged' : 'Adapting';
+  if (convergedNow) return 'Converged';
   return iteration > 0 ? 'Paused' : 'Ready';
 }
 
@@ -388,6 +542,7 @@ function recordNetworkSnapshot(): void {
   const needsOpt =
     domain === 'optimization' ||
     domain === 'fjsp' ||
+    domain === 'systems' ||
     dynamicsMode === 'linear-lp' ||
     showOptInput.checked;
   lastOptMetrics = needsOpt
@@ -411,10 +566,27 @@ function recordNetworkSnapshot(): void {
 
   recomputeFjsp(false);
 
+  if (domain === 'graphrag') {
+    applyViewerScope(graph, graphRagViewerScope);
+    lastGraphRagEval = evaluateGraphRag(graph, graphRagViewerScope);
+  } else {
+    lastGraphRagEval = null;
+  }
+
+  if (domain === 'systems' && activeSystemsSpec && systemsConditions) {
+    lastSystemsEval = evaluateSystemsScenario(graph, activeSystemsSpec, systemsConditions);
+  } else {
+    lastSystemsEval = null;
+  }
+
   const fjspMaxLambda = lastFjspComparison
     ? Math.max(0, ...Object.values(lastFjspComparison.upperSignals).map((s) => s.shadowPriceLambda))
     : 0;
   const fjspMakespan = lastFjspComparison?.twoLevel.makespanMin ?? 0;
+  const graphRagTopShare = lastGraphRagEval?.candidates[0]?.physarumShare ?? 0;
+  const graphRagNoisePruned = (lastGraphRagEval?.noisePrunedPct ?? 0) / 100;
+  const sysDropPct = lastSystemsEval?.physarum.dropPct ?? 0;
+  const sysMaxLambda = lastSystemsEval?.physarum.maxLambda ?? 0;
 
   if (
     historySamples.length === 0 ||
@@ -432,6 +604,10 @@ function recordNetworkSnapshot(): void {
       optimalityGapPct: lastOptMetrics.optimalityGapPct,
       fjspMakespan,
       fjspMaxLambda,
+      graphRagTopShare,
+      graphRagNoisePruned,
+      sysDropPct,
+      sysMaxLambda,
     });
     if (historySamples.length > 120) historySamples.shift();
   }
@@ -470,6 +646,13 @@ function drawSparkline(): void {
     const maxLam = Math.max(1, ...historySamples.map((s) => s.fjspMaxLambda));
     plotLine('#a3e66f', (s) => s.fjspMakespan / maxMs);
     plotLine('#f59e0b', (s) => s.fjspMaxLambda / maxLam);
+  } else if (domain === 'graphrag') {
+    plotLine('#a3e66f', (s) => s.graphRagTopShare);
+    plotLine('#38bdf8', (s) => s.graphRagNoisePruned);
+  } else if (domain === 'systems') {
+    const maxLam = Math.max(1, ...historySamples.map((s) => s.sysMaxLambda));
+    plotLine('#f87171', (s) => s.sysDropPct / 100);
+    plotLine('#38bdf8', (s) => s.sysMaxLambda / maxLam);
   } else {
     const maxTl = Math.max(2.5, ...historySamples.map((s) => s.tlRatio));
     plotLine('#a3e66f', (s) => s.tlRatio / maxTl);
@@ -491,6 +674,12 @@ function updateEdgeInspector(): void {
     } else if (activeTool === 'cap') {
       edgeInspector.textContent =
         'Cap Edge active: click any tube to toggle a 0.55 flow bottleneck capacity.';
+    } else if (domain === 'graphrag') {
+      edgeInspector.textContent =
+        'Hover any evidence link or use Cut Edge / Cap Edge to test GraphRAG rerouting.';
+    } else if (domain === 'systems') {
+      edgeInspector.textContent =
+        'Hover any rail or adjust the Condition Builder below (Surge / Cap / Extra Cost / Kill Rail) to watch live spillover.';
     } else {
       edgeInspector.textContent = 'Hover any path on the canvas to inspect its live equation.';
     }
@@ -526,6 +715,31 @@ function updateEdgeInspector(): void {
     const stateTag = edge.severed ? 'OFFLINE' : 'Online';
     edgeInspector.textContent = `Cell ${edge.cellId} (${edge.stage ?? 'Stage'}) · cap=${cap} · |Q|=${qAbs.toFixed(3)} · λ=${lam} · D=${edge.D.toFixed(3)} · ${stateTag}`;
     return;
+  }
+
+  if (domain === 'graphrag') {
+    const capInfo =
+      edge.capacity !== undefined
+        ? ` · cap=${edge.capacity.toFixed(2)} · λ=${(edge.congestion ?? 0).toFixed(2)}`
+        : '';
+    const stateTag = edge.scopeBlocked
+      ? 'T04 BLOCKED'
+      : edge.severed
+        ? edge.expired
+          ? 'EXPIRED'
+          : 'REVOKED'
+        : 'ACTIVE';
+    edgeInspector.textContent = `Edge ${nameA}↔${nameB} · ${edge.relation ?? 'Evidence'} · ${edge.evidenceRef ?? ''} · D=${edge.D.toFixed(3)} · |Q|=${qAbs.toFixed(3)}${capInfo} · ${stateTag}`;
+    return;
+  }
+
+  if (domain === 'systems' && edge.cellId && lastSystemsEval) {
+    const rail = lastSystemsEval.rails.find((r) => r.id === edge.cellId);
+    if (rail) {
+      const unit = lastSystemsEval.throughputUnit;
+      edgeInspector.textContent = `Rail ${rail.label} · ${Math.round(rail.loadUnits)}/${Math.round(rail.capUnits)} ${unit} (${Math.round(rail.sharePct)}%) · Cost ${rail.effectiveUnitCost.toFixed(lastSystemsEval.costUnit === '%' ? 2 : 0)}${lastSystemsEval.costUnit} · λ=${rail.shadowPriceLambda.toFixed(2)} · ${rail.status}`;
+      return;
+    }
   }
 
   if (domain === 'optimization' || domain === 'fjsp' || dynamicsMode === 'linear-lp') {
@@ -649,6 +863,213 @@ function renderErpTables(): void {
   </table>`;
 }
 
+function renderGraphRagTables(): void {
+  if (!lastGraphRagEval || domain !== 'graphrag') {
+    lastRenderedGraphRagSig = '';
+    return;
+  }
+  const evalRes = lastGraphRagEval;
+  const sig = `${activePresetId}:${graphRagViewerScope}:${iteration}:${evalRes.severedEdgesCount}:${evalRes.hiddenPrivateEdges}:${evalRes.candidates.map((c) => `${c.nodeId}:${c.physarumFlux.toFixed(3)}:${c.maxShadowPrice.toFixed(2)}:${c.status}`).join(',')}`;
+  if (sig === lastRenderedGraphRagSig) return;
+  lastRenderedGraphRagSig = sig;
+
+  if (evalRes.verdict === 'ready') {
+    graphragVerdictBadge.textContent = `Ready · ${evalRes.topCandidateLabel ?? 'Eligible'}`;
+    graphragVerdictBadge.className = 'fjsp-badge is-valid';
+  } else {
+    const gaps = evalRes.missingRequirementLabels.join(', ') || 'Requirement gap';
+    graphragVerdictBadge.textContent = `Needs review · Missing ${gaps}`;
+    graphragVerdictBadge.className = 'fjsp-badge is-invalid';
+  }
+
+  if (evalRes.pprHubTrapDetected) {
+    const topPpr = evalRes.candidates.find((c) => c.pprRank === 1);
+    graphragHubBadge.textContent = `PPR Hub Trap: ${topPpr?.label ?? 'Hub'} #1 (Physarum bypassed)`;
+    graphragHubBadge.className = 'fjsp-badge is-warn';
+  } else {
+    graphragHubBadge.textContent = `Noise ${Math.round(evalRes.noisePrunedPct)}% pruned · ${evalRes.hiddenPrivateEdges} T04 hidden`;
+    graphragHubBadge.className = 'fjsp-badge is-valid';
+  }
+
+  const hasT02OrInstall = graph.edges.some(
+    (e) => !e.severed && (e.relation === 'T02 Pack-of-10' || e.relation === 'On-Site Install'),
+  );
+  graphragCutT02Btn.disabled = !hasT02OrInstall;
+  graphragCutIsoBtn.disabled = !graph.edges.some(
+    (e) => !e.severed && Boolean(e.evidenceRef?.startsWith('cert-siam-v2')),
+  );
+
+  const rankRows = evalRes.candidates
+    .map((c) => {
+      const statusCls = c.status === 'eligible' ? 'erp-tag-ok' : 'erp-tag-late';
+      const statusLabel =
+        c.status === 'eligible'
+          ? 'Eligible'
+          : `Needs review (${c.missingLabels.map((m) => m.split(' ')[0]).join(', ')})`;
+      return `<tr>
+        <td><strong>${escapeHtml(c.label)}</strong> <small>(${c.role})</small></td>
+        <td class="num">#${c.physarumRank} / #${c.pprRank}</td>
+        <td class="num">${c.physarumFlux.toFixed(3)} (${(c.physarumShare * 100).toFixed(0)}%)</td>
+        <td class="num">${c.maxShadowPrice.toFixed(2)}</td>
+        <td class="num">${c.pprScore.toFixed(3)} (${(c.pprShare * 100).toFixed(0)}%)</td>
+        <td class="${statusCls}">${escapeHtml(statusLabel)}</td>
+      </tr>`;
+    })
+    .join('');
+
+  graphragRankingTable.innerHTML = `<table class="erp-table">
+    <thead><tr><th>Candidate</th><th class="num">Phy / PPR</th><th class="num">Phy Flux</th><th class="num">λ_e</th><th class="num">PPR</th><th>Status</th></tr></thead>
+    <tbody>${rankRows}</tbody>
+  </table>`;
+
+  const activeCitRows = evalRes.citations
+    .slice(0, 14)
+    .map(
+      (cit) => `<tr>
+        <td>${escapeHtml(cit.fromLabel)} ↔ ${escapeHtml(cit.toLabel)}</td>
+        <td>${escapeHtml(cit.relation)}</td>
+        <td class="erp-tag-sku">${escapeHtml(cit.evidenceRef)}</td>
+        <td class="num">${cit.flow.toFixed(3)}</td>
+        <td class="erp-tag-ok">ACTIVE</td>
+      </tr>`,
+    )
+    .join('');
+
+  const auditRows = evalRes.auditEdges
+    .map((a) => {
+      const cls = a.reason === 'scope-blocked' ? 'erp-tag-sku' : 'erp-tag-late';
+      const label =
+        a.reason === 'scope-blocked'
+          ? 'T04 BLOCKED'
+          : a.reason === 'expired'
+            ? 'EXPIRED'
+            : 'REVOKED';
+      return `<tr>
+        <td>${escapeHtml(a.fromLabel)} ↔ ${escapeHtml(a.toLabel)}</td>
+        <td>${escapeHtml(a.relation)}</td>
+        <td class="erp-tag-sku">${escapeHtml(a.evidenceRef)}</td>
+        <td class="num">0.000</td>
+        <td class="${cls}">${label}</td>
+      </tr>`;
+    })
+    .join('');
+
+  graphragEvidenceTable.innerHTML = `<table class="erp-table">
+    <thead><tr><th>Link</th><th>Relation</th><th>Anchor</th><th class="num">|Q|</th><th>State</th></tr></thead>
+    <tbody>${auditRows}${activeCitRows}</tbody>
+  </table>`;
+}
+
+function populateSystemsRailSelect(): void {
+  if (!activeSystemsSpec) {
+    sysRailSelect.replaceChildren();
+    return;
+  }
+  const prev = sysRailSelect.value;
+  sysRailSelect.replaceChildren(
+    ...activeSystemsSpec.rails.map((r) => {
+      const opt = document.createElement('option');
+      opt.value = r.id;
+      opt.textContent = r.label;
+      return opt;
+    }),
+  );
+  if (prev && activeSystemsSpec.rails.some((r) => r.id === prev)) {
+    sysRailSelect.value = prev;
+  } else if (activeSystemsSpec.rails[0]) {
+    sysRailSelect.value = activeSystemsSpec.rails[0].id;
+  }
+}
+
+function syncSystemsConditionControls(): void {
+  if (!activeSystemsSpec || !systemsConditions) return;
+  sysLoadInput.value = systemsConditions.trafficMultiplier.toFixed(2);
+  sysLoadValue.value = `${systemsConditions.trafficMultiplier.toFixed(2)}×`;
+
+  const selectedRailId = sysRailSelect.value || activeSystemsSpec.rails[0]?.id;
+  if (!selectedRailId) return;
+  const cond = systemsConditions.rails[selectedRailId] ?? {
+    capScale: 1,
+    extraCost: 0,
+    offline: false,
+  };
+  sysRailCapInput.value = cond.capScale.toFixed(2);
+  sysRailCapValue.value = `${Math.round(cond.capScale * 100)}%`;
+  sysRailCostInput.value = cond.extraCost.toFixed(1);
+  sysRailCostValue.value = `+${cond.extraCost.toFixed(1)}×`;
+  sysRailCutBtn.textContent = cond.offline ? 'Restore Rail' : 'Kill Rail (Cut)';
+  sysRailCutBtn.setAttribute('aria-pressed', String(cond.offline));
+}
+
+function renderSystemsTable(): void {
+  if (!lastSystemsEval || domain !== 'systems') {
+    lastRenderedSystemsSig = '';
+    return;
+  }
+  const ev = lastSystemsEval;
+  const sig = `${activePresetId}:${iteration}:${ev.totalDemand.toFixed(1)}:${ev.rails.map((r) => `${r.id}:${r.sharePct.toFixed(1)}:${r.shadowPriceLambda.toFixed(2)}:${r.status}:${r.capUnits.toFixed(0)}:${r.effectiveUnitCost.toFixed(2)}`).join(',')}`;
+  if (sig === lastRenderedSystemsSig) return;
+  lastRenderedSystemsSig = sig;
+
+  systemsStatusBadge.textContent =
+    ev.physarum.dropPct <= 0.1
+      ? `0% Drops · Max λ=${ev.physarum.maxLambda.toFixed(2)}`
+      : `${ev.physarum.dropPct.toFixed(1)}% Overload`;
+  systemsStatusBadge.className = `fjsp-badge ${ev.physarum.dropPct <= 1 ? 'is-valid' : 'is-invalid'}`;
+
+  if (ev.dropReductionPct > 0.2) {
+    systemsBaselineBadge.textContent = `-${ev.dropReductionPct.toFixed(1)}% drops vs Static`;
+    systemsBaselineBadge.className = 'fjsp-badge is-valid';
+  } else {
+    const unit = ev.costUnit;
+    const dec = unit === '%' ? 2 : 1;
+    systemsBaselineBadge.textContent = `Static ${ev.staticBaseline.avgCost.toFixed(dec)}${unit} · ${ev.staticBaseline.dropPct.toFixed(1)}% drop`;
+    systemsBaselineBadge.className = 'fjsp-badge is-valid';
+  }
+
+  const unit = ev.throughputUnit;
+  const costDec = ev.costUnit === '%' ? 2 : 1;
+  const rows = ev.rails
+    .map((r) => {
+      const cls =
+        r.status === 'OFFLINE' || r.status === 'SATURATED'
+          ? 'erp-tag-late'
+          : r.status === 'SPILLING'
+            ? 'erp-tag-sku'
+            : 'erp-tag-ok';
+      return `<tr>
+        <td><strong>${escapeHtml(r.label)}</strong>${r.isPrimaryTier ? '' : ' <small>(bottleneck)</small>'}</td>
+        <td class="num">${Math.round(r.loadUnits)} / ${Math.round(r.capUnits)} ${escapeHtml(unit)}</td>
+        <td class="num">${r.sharePct.toFixed(0)}%</td>
+        <td class="num">${r.effectiveUnitCost.toFixed(costDec)}${escapeHtml(ev.costUnit)}</td>
+        <td class="num">${r.shadowPriceLambda.toFixed(2)}</td>
+        <td class="${cls}">${r.status}</td>
+      </tr>`;
+    })
+    .join('');
+
+  systemsTable.innerHTML = `<table class="erp-table">
+    <thead><tr><th>Rail / Backend</th><th class="num">Load / Cap</th><th class="num">Share</th><th class="num">${escapeHtml(ev.costMetricLabel)}</th><th class="num">λ<sub>e</sub></th><th>State</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`;
+}
+
+function applyAndRefreshSystems(stepsToSettle = 24): void {
+  if (domain !== 'systems' || !activeSystemsSpec || !systemsConditions) return;
+  applySystemsConditions(graph, activeSystemsSpec, systemsConditions);
+  syncActiveCapacitiesFromGraph();
+  syncSystemsConditionControls();
+  invalidateExactCache();
+  lastRenderedSystemsSig = '';
+  if (stepsToSettle > 0) {
+    runSteps(stepsToSettle);
+  } else {
+    recordNetworkSnapshot();
+  }
+  draw();
+  updateStats(fpsAverage);
+}
+
 function updateStats(fps: number): void {
   const activeThreshold = domain === 'vascular' ? 0.005 : 0.05;
   const activeEdges = graph.edges.filter((edge) => !edge.severed && edge.D >= activeThreshold).length;
@@ -742,6 +1163,32 @@ function updateStats(fps: number): void {
     fjspVerifyBadge.className = two.verification.valid
       ? 'fjsp-badge is-valid'
       : 'fjsp-badge is-invalid';
+  } else if (domain === 'graphrag' && lastGraphRagEval) {
+    const evalRes = lastGraphRagEval;
+    const topSharePct = ((evalRes.candidates[0]?.physarumShare ?? 0) * 100).toFixed(0);
+    metricTl.textContent =
+      evalRes.verdict === 'ready'
+        ? `${evalRes.topCandidateLabel ?? 'Ready'} (${topSharePct}%)`
+        : `Needs review (${evalRes.missingRequirementLabels.length} gap)`;
+    const topPpr = evalRes.candidates.find((c) => c.pprRank === 1);
+    metricMd.textContent = topPpr
+      ? `${topPpr.label} (${evalRes.pprHubTrapDetected ? 'Hub Trap!' : `${(topPpr.pprShare * 100).toFixed(0)}%`})`
+      : '—';
+    const hubCand = evalRes.candidates.find((c) => c.role === 'hub');
+    const maxLam = hubCand
+      ? hubCand.maxShadowPrice
+      : Math.max(0, ...evalRes.candidates.map((c) => c.maxShadowPrice));
+    metricFt.textContent = `λ=${maxLam.toFixed(2)} · ${evalRes.severedEdgesCount} cut`;
+    metricPcg.textContent = `${Math.round(evalRes.noisePrunedPct)}% pruned · ${evalRes.hiddenPrivateEdges} T04`;
+    renderGraphRagTables();
+  } else if (domain === 'systems' && lastSystemsEval) {
+    const ev = lastSystemsEval;
+    const dec = ev.costUnit === '%' ? 2 : 1;
+    metricTl.textContent = `${ev.physarum.avgCost.toFixed(dec)}${ev.costUnit} vs ${ev.staticBaseline.avgCost.toFixed(dec)}${ev.costUnit}`;
+    metricMd.textContent = `${ev.physarum.dropPct.toFixed(1)}% vs ${ev.staticBaseline.dropPct.toFixed(1)}%`;
+    metricFt.textContent = `${ev.physarum.successPct.toFixed(1)}% · λ=${ev.physarum.maxLambda.toFixed(2)}`;
+    metricPcg.textContent = `${Math.round(ev.totalDemand)} ${ev.throughputUnit} · ${ev.activeRails}/${ev.rails.length} up`;
+    renderSystemsTable();
   } else {
     metricTl.textContent =
       lastNetworkMetrics.mstLength > 0 ? `${lastNetworkMetrics.tlRatio.toFixed(2)}×` : '—';
@@ -758,11 +1205,29 @@ function updateStats(fps: number): void {
   drawSparkline();
   updateEdgeInspector();
 
-  stats.textContent = `${graph.nodes.length} nodes · ${activeEdges}/${graph.edges.length} visible paths · ${iteration.toLocaleString()} steps · ${fps.toFixed(0)} fps`;
+  const deltaInfo = iteration > 0 ? ` · ΔD ${lastStepMetrics.maxChange.toExponential(1)}` : '';
+  stats.textContent = `${graph.nodes.length} nodes · ${activeEdges}/${graph.edges.length} visible paths · ${iteration.toLocaleString()} steps · ${fps.toFixed(0)} fps${deltaInfo}`;
   canvasSummary.textContent = `Network canvas (${domain}): ${graph.nodes.length} nodes, ${sources} sources, ${sinks} sinks, and ${activeEdges} visible paths. Simulation status: ${status}.`;
 }
 
 function draw(): void {
+  let systemsRailLabels:
+    | Record<
+        string,
+        { label: string; sharePct: number; status: 'HEALTHY' | 'SPILLING' | 'SATURATED' | 'OFFLINE' }
+      >
+    | undefined;
+  if (domain === 'systems' && lastSystemsEval) {
+    systemsRailLabels = {};
+    for (const r of lastSystemsEval.rails) {
+      systemsRailLabels[r.id] = {
+        label: r.shortLabel,
+        sharePct: r.sharePct,
+        status: r.status,
+      };
+    }
+  }
+
   render(ctx, graph, {
     domain,
     backgroundImage: mapImage,
@@ -781,9 +1246,15 @@ function draw(): void {
     showShearHeatmap: showShearInput.checked,
     edgeShearNorm: lastVascularMetrics.edgeShearNorm,
     showCapacityBadges: showCapsInput.checked,
+    graphRagViewerScope: domain === 'graphrag' ? graphRagViewerScope : undefined,
+    systemsStageHeaders: domain === 'systems' ? activeSystemsSpec?.stageHeaders : undefined,
+    systemsRailLabels,
   });
   if (domain === 'optimization' && crossbarContext) {
     renderCrossbarMatrix(crossbarContext, graph);
+  }
+  if (domain === 'systems' && sysChartContext && lastSystemsEval) {
+    renderSystemsComparisonChart(sysChartContext, lastSystemsEval);
   }
   if (domain === 'fjsp' && ganttContext && lastFjspComparison) {
     const sol = showGreedyGantt ? lastFjspComparison.greedyBaseline : lastFjspComparison.twoLevel;
@@ -824,6 +1295,7 @@ function runSteps(count: number): void {
       dynamicsMode,
       random: simRandom,
       prevPressures: lastStepMetrics.pressures,
+      deterministicAllPairs: domain === 'graphrag',
     });
   }
   iteration += count;
@@ -865,6 +1337,12 @@ function clearGraph(): void {
   lastFjspComparison = null;
   lastErpComparison = null;
   lastRenderedErpSignature = '';
+  lastGraphRagEval = null;
+  lastRenderedGraphRagSig = '';
+  activeSystemsSpec = null;
+  systemsConditions = null;
+  lastSystemsEval = null;
+  lastRenderedSystemsSig = '';
   graph = emptyGraph();
   clearTerrain(terrain);
   invalidateExactCache();
@@ -920,11 +1398,27 @@ function applyState(
         activeFjspCells = getCellsForPreset(resolvedPresetId);
         fjspShiftCapEnabled = false;
       }
+      fjspShiftCapEnabled = state.fjspShiftCap ?? fjspShiftCapEnabled;
+      baseFjspJobs = activeFjspJobs;
+      // Use an existing finish from this preset when an unplated order opts in.
+      platingTemplate = baseFjspJobs.flatMap(job => job.ops).find(op => op.stage === 'plate')!;
+      applyPoEdits(state.poEdits ?? []);
+      poEditor.setOrders(baseFjspJobs, activeFjspCells, platingTemplate, poEdits);
       ganttCanvas.height = activeFjspCells.length > 14 ? 380 : 320;
       fjspShiftCapInput.checked = fjspShiftCapEnabled;
     } else {
       activeErpScenario = null;
       lastErpComparison = null;
+    }
+    if (domain === 'systems') {
+      activeSystemsSpec = getSystemsScenario(resolvedPresetId) ?? SYSTEMS_SCENARIOS[0];
+      systemsConditions = createDefaultSystemsConditions(activeSystemsSpec);
+      lastRenderedSystemsSig = '';
+    } else {
+      activeSystemsSpec = null;
+      systemsConditions = null;
+      lastSystemsEval = null;
+      lastRenderedSystemsSig = '';
     }
     lastRenderedErpSignature = '';
   } else {
@@ -936,6 +1430,10 @@ function applyState(
     activeErpScenario = null;
     lastErpComparison = null;
     lastRenderedErpSignature = '';
+    activeSystemsSpec = null;
+    systemsConditions = null;
+    lastSystemsEval = null;
+    lastRenderedSystemsSig = '';
   }
 
   clearTerrain(terrain);
@@ -949,10 +1447,23 @@ function applyState(
   if (domain === 'fjsp' && activeCapacities.length === 0) {
     syncActiveCapacitiesFromGraph();
   }
+  if (domain === 'graphrag') {
+    applyViewerScope(graph, graphRagViewerScope);
+    graphragViewerSelect.value = graphRagViewerScope;
+    lastRenderedGraphRagSig = '';
+  }
+  if (domain === 'systems') {
+    populateSystemsRailSelect();
+    syncSystemsConditionControls();
+  }
   showLabelsInput.checked = state.nodes.some((n) => Boolean(n.label));
   showShearInput.checked = false;
   showOptInput.checked = domain === 'optimization';
-  showCapsInput.checked = activeCapacities.length > 0 || domain === 'fjsp';
+  showCapsInput.checked =
+    activeCapacities.length > 0 || domain === 'fjsp' || domain === 'graphrag' || domain === 'systems';
+  if (domain === 'graphrag' || domain === 'systems') {
+    showPressureInput.checked = true;
+  }
   showGreedyGantt = false;
   fjspToggleViewBtn.textContent = 'Show Greedy Baseline';
   presetSelect.value = resolvedPresetId;
@@ -1036,11 +1547,14 @@ function setDomain(nextDomain: LabDomain): void {
 }
 
 function currentState(): SharedState {
-  const baseNodes = graph.nodes.map((node) =>
-    node.label
+  const baseNodes = graph.nodes.map((node) => {
+    const out: Node = node.label
       ? { id: node.id, x: node.x, y: node.y, flow: node.flow, label: node.label }
-      : { id: node.id, x: node.x, y: node.y, flow: node.flow },
-  );
+      : { id: node.id, x: node.x, y: node.y, flow: node.flow };
+    if (node.role) out.role = node.role;
+    if (node.room) out.room = node.room;
+    return out;
+  });
   syncActiveCapacitiesFromGraph();
   if (
     domain !== 'transport' ||
@@ -1059,6 +1573,8 @@ function currentState(): SharedState {
       speed,
       seed,
       presetId: activePresetId || undefined,
+      fjspShiftCap: domain === 'fjsp' ? fjspShiftCapEnabled : undefined,
+      poEdits: domain === 'fjsp' && poEdits.length ? poEdits : undefined,
       maxRadiusMm,
       capacities: activeCapacities.length > 0 ? activeCapacities : undefined,
     };
@@ -1190,6 +1706,7 @@ function exportSchedule(): void {
       seed,
       iteration,
       shiftMinPerDay: fjspShiftCapEnabled ? SHIFT_MIN_PER_DAY : 0,
+      jobs: activeFjspJobs,
       comparison: lastFjspComparison,
       erp: lastErpComparison,
     },
@@ -1200,6 +1717,35 @@ function exportSchedule(): void {
     payload,
     'application/json;charset=utf-8',
     `physarum-jewelry-schedule-${seed}-${iteration}.json`,
+  );
+}
+
+function exportGraphRag(): void {
+  if (domain !== 'graphrag') return;
+  applyViewerScope(graph, graphRagViewerScope);
+  const evalRes = evaluateGraphRag(graph, graphRagViewerScope);
+  const payload = exportGraphRagJson(graph, evalRes, {
+    presetId: activePresetId || 'custom-graphrag',
+    seed,
+    iteration,
+  });
+  downloadTextFile(
+    payload,
+    'application/json;charset=utf-8',
+    `physarum-graphrag-evidence-${seed}-${iteration}.json`,
+  );
+}
+
+function exportSystems(): void {
+  if (domain !== 'systems' || !activeSystemsSpec || !systemsConditions || !lastSystemsEval) return;
+  const payload = exportSystemsJson(graph, activeSystemsSpec, systemsConditions, lastSystemsEval, {
+    seed,
+    iteration,
+  });
+  downloadTextFile(
+    payload,
+    'application/json;charset=utf-8',
+    `physarum-${activeSystemsSpec.id}-${seed}-${iteration}.json`,
   );
 }
 
@@ -1245,6 +1791,8 @@ const domainGroups: Array<{ domain: LabDomain; label: string }> = [
   { domain: 'vascular', label: 'Vascular & Microfluidics' },
   { domain: 'optimization', label: 'Optimization & Analog LP' },
   { domain: 'fjsp', label: 'Factory FJSP · Two-Level' },
+  { domain: 'graphrag', label: 'GraphRAG · Multi-Hop Evidence' },
+  { domain: 'systems', label: 'Systems · Control-Plane' },
 ];
 for (const groupSpec of domainGroups) {
   const optgroup = document.createElement('optgroup');
@@ -1279,9 +1827,11 @@ flowModeSelect.addEventListener('change', () => {
 
 dynamicsModeSelect.addEventListener('change', () => {
   dynamicsMode = dynamicsModeSelect.value as DynamicsMode;
-  if (dynamicsMode === 'murray') domain = 'vascular';
-  else if (dynamicsMode === 'linear-lp' && domain !== 'fjsp') domain = 'optimization';
-  else if (dynamicsMode === 'tero') domain = 'transport';
+  if (domain !== 'graphrag' && domain !== 'systems') {
+    if (dynamicsMode === 'murray') domain = 'vascular';
+    else if (dynamicsMode === 'linear-lp' && domain !== 'fjsp') domain = 'optimization';
+    else if (dynamicsMode === 'tero') domain = 'transport';
+  }
   syncDomainUi();
   recordNetworkSnapshot();
   draw();
@@ -1340,6 +1890,11 @@ for (const button of demoButtons) {
       showPressureInput.checked = true;
       showLabelsInput.checked = true;
       setRunning(true);
+    } else if (demo === 'fjsp-300po' || demo === 'fjsp-300po-halo-spare') {
+      loadPreset(demo === 'fjsp-300po-halo-spare' ? 'fjsp-jewelry-300po-halo-spare' : 'fjsp-jewelry-300po');
+      runSteps(240);
+      showLabelsInput.checked = true;
+      element<HTMLFormElement>('po-route-form').closest('details')!.open = true;
     } else if (demo === 'fjsp-erp') {
       loadPreset('fjsp-jewelry-erp');
       runSteps(140);
@@ -1357,6 +1912,48 @@ for (const button of demoButtons) {
       showCapsInput.checked = true;
       showPressureInput.checked = true;
       showLabelsInput.checked = true;
+      setRunning(true);
+    } else if (demo === 'graphrag-sensors') {
+      graphRagViewerScope = 'buyer';
+      loadPreset('graphrag-tender-sensors');
+      runSteps(140);
+      setRunning(true);
+    } else if (demo === 'graphrag-t02-cut') {
+      graphRagViewerScope = 'buyer';
+      loadPreset('graphrag-tender-sensors');
+      const targetEdge = graph.edges.find((e) => e.relation === 'T02 Pack-of-10');
+      if (targetEdge) {
+        targetEdge.severed = true;
+        targetEdge.D = 0;
+        targetEdge.flow = 0;
+        targetEdge.congestion = 0;
+      }
+      runSteps(160);
+      setActiveTool('cut');
+      setRunning(true);
+    } else if (demo === 'sys-payment') {
+      loadPreset('sys-payment');
+      runSteps(140);
+      setRunning(true);
+    } else if (demo === 'sys-llm-surge') {
+      loadPreset('sys-llm-gateway');
+      if (systemsConditions) {
+        systemsConditions.trafficMultiplier = 1.8;
+        applySystemsConditions(graph, activeSystemsSpec!, systemsConditions);
+        syncActiveCapacitiesFromGraph();
+        syncSystemsConditionControls();
+      }
+      runSteps(160);
+      setRunning(true);
+    } else if (demo === 'sys-mesh-bp') {
+      loadPreset('sys-service-mesh');
+      if (systemsConditions) {
+        systemsConditions.trafficMultiplier = 1.35;
+        applySystemsConditions(graph, activeSystemsSpec!, systemsConditions);
+        syncActiveCapacitiesFromGraph();
+        syncSystemsConditionControls();
+      }
+      runSteps(160);
       setRunning(true);
     }
     draw();
@@ -1382,6 +1979,15 @@ canvas.addEventListener('pointerdown', (event) => {
     const severed = severEdgeNear(graph, x, y, 14);
     if (severed !== null) {
       hoveredEdgeIndex = null;
+      const cutEdge = graph.edges[severed];
+      if (domain === 'systems' && cutEdge?.cellId && systemsConditions) {
+        const cur = systemsConditions.rails[cutEdge.cellId];
+        if (cur) {
+          cur.offline = true;
+          syncSystemsConditionControls();
+        }
+        lastRenderedSystemsSig = '';
+      }
       invalidateExactCache();
       recomputeFjsp(true);
       recordNetworkSnapshot();
@@ -1467,6 +2073,9 @@ clearObstaclesBtn.addEventListener('click', () => {
   clearTerrain(terrain);
   mapObstacleInput.checked = false;
   applyTerrainToGraph(graph, terrain);
+  if (domain === 'systems' && activeSystemsSpec && systemsConditions) {
+    applySystemsConditions(graph, activeSystemsSpec, systemsConditions);
+  }
   invalidateExactCache();
   recordNetworkSnapshot();
   draw();
@@ -1491,6 +2100,144 @@ exportScadBtn.addEventListener('click', exportScad);
 exportSpiceBtn.addEventListener('click', exportSpice);
 exportCpsatBtn.addEventListener('click', exportCpsat);
 exportScheduleBtn.addEventListener('click', exportSchedule);
+exportGraphRagBtn.addEventListener('click', exportGraphRag);
+exportSystemsBtn.addEventListener('click', exportSystems);
+
+autoStopInput.addEventListener('change', () => {
+  autoStopOnConverge = autoStopInput.checked;
+});
+
+sysLoadInput.addEventListener('input', () => {
+  if (!systemsConditions) return;
+  systemsConditions.trafficMultiplier = Number(sysLoadInput.value);
+  applyAndRefreshSystems(28);
+});
+
+sysRailSelect.addEventListener('change', () => {
+  syncSystemsConditionControls();
+});
+
+sysRailCapInput.addEventListener('input', () => {
+  if (!systemsConditions) return;
+  const railId = sysRailSelect.value;
+  if (!railId || !systemsConditions.rails[railId]) return;
+  systemsConditions.rails[railId].capScale = Number(sysRailCapInput.value);
+  applyAndRefreshSystems(28);
+});
+
+sysRailCostInput.addEventListener('input', () => {
+  if (!systemsConditions) return;
+  const railId = sysRailSelect.value;
+  if (!railId || !systemsConditions.rails[railId]) return;
+  systemsConditions.rails[railId].extraCost = Number(sysRailCostInput.value);
+  applyAndRefreshSystems(28);
+});
+
+sysRailCutBtn.addEventListener('click', () => {
+  if (!systemsConditions) return;
+  const railId = sysRailSelect.value;
+  if (!railId || !systemsConditions.rails[railId]) return;
+  systemsConditions.rails[railId].offline = !systemsConditions.rails[railId].offline;
+  applyAndRefreshSystems(96);
+});
+
+sysPresetNormalBtn.addEventListener('click', () => {
+  if (!activeSystemsSpec) return;
+  systemsConditions = createDefaultSystemsConditions(activeSystemsSpec);
+  applyAndRefreshSystems(96);
+});
+
+sysPresetSurgeBtn.addEventListener('click', () => {
+  if (!systemsConditions) return;
+  systemsConditions.trafficMultiplier = 1.8;
+  applyAndRefreshSystems(140);
+});
+
+sysPresetOutageBtn.addEventListener('click', () => {
+  if (!activeSystemsSpec || !systemsConditions) return;
+  const primary = activeSystemsSpec.rails[0]?.id;
+  if (!primary || !systemsConditions.rails[primary]) return;
+  systemsConditions.rails[primary].offline = true;
+  sysRailSelect.value = primary;
+  applyAndRefreshSystems(140);
+});
+
+sysResetCondBtn.addEventListener('click', () => {
+  if (!activeSystemsSpec) return;
+  systemsConditions = createDefaultSystemsConditions(activeSystemsSpec);
+  applyAndRefreshSystems(96);
+});
+
+graphragViewerSelect.addEventListener('change', () => {
+  graphRagViewerScope = graphragViewerSelect.value as GraphRagViewerScope;
+  applyViewerScope(graph, graphRagViewerScope);
+  lastRenderedGraphRagSig = '';
+  recordNetworkSnapshot();
+  draw();
+  updateStats(fpsAverage);
+});
+
+graphragCutT02Btn.addEventListener('click', () => {
+  const edge = graph.edges.find(
+    (e) => !e.severed && (e.relation === 'T02 Pack-of-10' || e.relation === 'On-Site Install'),
+  );
+  if (!edge) return;
+  edge.severed = true;
+  edge.D = 0;
+  edge.flow = 0;
+  edge.congestion = 0;
+  lastRenderedGraphRagSig = '';
+  runSteps(120);
+  draw();
+  updateStats(fpsAverage);
+});
+
+graphragCutIsoBtn.addEventListener('click', () => {
+  const edge = graph.edges.find(
+    (e) => !e.severed && Boolean(e.evidenceRef?.startsWith('cert-siam-v2')),
+  );
+  if (!edge) return;
+  edge.severed = true;
+  edge.D = 0;
+  edge.flow = 0;
+  edge.congestion = 0;
+  lastRenderedGraphRagSig = '';
+  runSteps(120);
+  draw();
+  updateStats(fpsAverage);
+});
+
+graphragToggleHubCapBtn.addEventListener('click', () => {
+  const hubEdges = graph.edges.filter(
+    (e) =>
+      graph.nodes[e.i]?.role === 'hub' ||
+      graph.nodes[e.j]?.role === 'hub' ||
+      e.relation === 'Reseller Catalog',
+  );
+  const bridgeEdges = hubEdges.filter(
+    (e) => graph.nodes[e.i]?.role === 'query' || graph.nodes[e.j]?.role === 'query',
+  );
+  const targets = bridgeEdges.length > 0 ? bridgeEdges : hubEdges;
+  const anyCapped = targets.some((e) => e.capacity !== undefined);
+  for (const edge of targets) {
+    if (anyCapped) {
+      delete edge.capacity;
+    } else {
+      edge.capacity = 0.1;
+    }
+    edge.congestion = 0;
+  }
+  syncActiveCapacitiesFromGraph();
+  lastRenderedGraphRagSig = '';
+  runSteps(140);
+  draw();
+  updateStats(fpsAverage);
+});
+
+graphragResetBtn.addEventListener('click', () => {
+  graphRagViewerScope = 'buyer';
+  loadPreset(activePresetId || 'graphrag-tender-sensors');
+});
 
 fjspWeightInput.addEventListener('input', () => {
   fjspGuidanceWeight = Number(fjspWeightInput.value);
@@ -1511,6 +2258,7 @@ fjspShiftCapInput.addEventListener('change', () => {
 
 fjspToggleViewBtn.addEventListener('click', () => {
   showGreedyGantt = !showGreedyGantt;
+  updatePoAssignments();
   fjspToggleViewBtn.textContent = showGreedyGantt
     ? 'Show Two-Level Physarum'
     : 'Show Greedy Baseline';
@@ -1621,6 +2369,9 @@ function frame(): void {
   if (running) {
     runSteps(speed);
     if (!reducedMotion) flowPhase = (flowPhase + elapsed * 0.00055) % 1;
+    if (autoStopOnConverge && iteration >= 40 && lastStepMetrics.maxChange < 5e-5) {
+      setRunning(false);
+    }
   } else if (showPressureInput.checked && !reducedMotion) {
     flowPhase = (flowPhase + elapsed * 0.00035) % 1;
   }

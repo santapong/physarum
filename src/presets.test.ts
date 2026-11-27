@@ -10,10 +10,10 @@ import { PRESETS } from './presets';
 import { createRandom } from './random';
 
 describe('presets', () => {
-  it('provides sixteen valid, runnable scenarios across all four lab domains', () => {
-    expect(PRESETS).toHaveLength(16);
+  it('provides twenty-six valid, runnable scenarios across all six lab domains', () => {
+    expect(PRESETS).toHaveLength(26);
     const domains = new Set(PRESETS.map((p) => p.domain));
-    expect(domains).toEqual(new Set(['transport', 'vascular', 'optimization', 'fjsp']));
+    expect(domains).toEqual(new Set(['transport', 'vascular', 'optimization', 'fjsp', 'graphrag', 'systems']));
 
     for (const preset of PRESETS) {
       expect(new Set(preset.nodes.map((node) => node.id)).size).toBe(preset.nodes.length);
