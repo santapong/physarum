@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.2.0 - 2026-11-27
+
+- Added **20-Cell Factory Production Plan** (`factory.html`) + **300-PO Mixed Jewelry Routes**, **Halo standby mold swapping**, wax-mold inventory/shot tracking, and interactive **PO routing & operation times** editor with finish plating toggles.
+- Added **GraphRAG · Multi-Hop Evidence** lab (`graphrag` domain, `graphrag-tender-sensors` & `graphrag-salon-gap` presets): deterministic all-pairs `Q_rms` + shadow-price `λ_e` hub de-biasing vs Personalized PageRank, **T04 room scope isolation**, **Cut Edge** evidence revocation gap detection, and **Export Evidence (.json)**.
+- Added **Systems · Control-Plane** lab (`systems` domain, 6 distributed systems presets: `sys-payment`, `sys-llm-gateway`, `sys-etl-pool`, `sys-edge-cloud`, `sys-service-mesh`, `sys-db-router`) with interactive **Live Condition Builder** (`Load ×`, rail capacity `u_e`, extra cost/lag/decline, `Kill Rail`), real-time Utilization vs Cap + Physarum vs Static Baseline comparison chart (`#syschart`), and **Export Routing (.json)**.
+- Added **Auto-stop when converged** (`#auto-stop`) toggle and live convergence metric `ΔD` in the stats bar; expanded suite to **26 presets** across **6 domains** and **88 unit tests across 19 test files**.
+
 ## 3.1.0 - 2026-11-25
 
 - Added **Factory FJSP · Two-Level** lab (`fjsp` domain + explicit DAG substrate): Upper-layer multi-stage Jewelry Factory flow balancing (`Wax → Casting → Filing → Setting → Polish → Plating → QC`), normalized bottleneck shadow prices (`λ / (1 + λ)`), `Cut Edge` machine disruption rerouting, and Lower-layer non-overlapping active decoder + independent hard-constraint verifier (`verifyFjspSchedule`), Gantt visualization, warm-started **OR-Tools CP-SAT `.py`** export, and **Schedule `.json`** export.
